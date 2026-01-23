@@ -1,17 +1,66 @@
-import { IsString, IsNotEmpty, IsEmail } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsEmail,
+  IsObject,
+  ValidateNested,
+  IsOptional,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+
+class CreateEnderecoDto {
+  @IsString()
+  @IsNotEmpty()
+  logradouro: string;
+
+  @IsString()
+  @IsNotEmpty()
+  numero: string;
+
+  @IsString()
+  @IsOptional()
+  complemento?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  bairro: string;
+
+  @IsString()
+  @IsNotEmpty()
+  cidade: string;
+
+  @IsString()
+  @IsNotEmpty()
+  estado: string;
+
+  @IsString()
+  @IsNotEmpty()
+  cep: string;
+}
 
 export class CreateEmpresaDto {
   @IsString()
   @IsNotEmpty()
-  nome: string;
+  nomeFantasia: string;
+
+  @IsString()
+  @IsNotEmpty()
+  razaoSocial: string;
 
   @IsString()
   @IsNotEmpty()
   cnpj: string;
 
   @IsEmail()
-  email?: string;
+  @IsNotEmpty()
+  email: string;
 
   @IsString()
-  telefone?: string;
+  @IsNotEmpty()
+  telefone: string;
+
+  @IsObject()
+  @ValidateNested()
+  @Type(() => CreateEnderecoDto)
+  endereco: CreateEnderecoDto;
 }
