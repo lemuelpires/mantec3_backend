@@ -18,6 +18,9 @@ import { GarantiasModule } from './garantias/garantias.module';
 import { ComunicacaoModule } from './comunicacao/comunicacao.module';
 import { AuditoriaModule } from './auditoria/auditoria.module';
 import { AuthModule } from './auth/auth.module';
+import { ProdutosModule } from './catalogo/produtos/produtos.module';
+import { ServicosModule } from './catalogo/servicos/servicos.module';
+import { CompatibilidadeModule } from './catalogo/compatibilidade/compatibilidade.module';
 
 @Module({
   imports: [
@@ -38,6 +41,9 @@ import { AuthModule } from './auth/auth.module';
     ComunicacaoModule,
     AuditoriaModule,
     AuthModule,
+    ProdutosModule,
+    ServicosModule,
+    CompatibilidadeModule,
   ],
   controllers: [AppController],
   providers: [AppService],
