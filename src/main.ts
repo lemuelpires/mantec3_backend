@@ -52,20 +52,23 @@ async function bootstrap() {
 
   // --- Endpoint para listar todas as rotas ---
   app.getHttpAdapter().getInstance().get('/__rotas', (_, res) => {
-    const server = app.getHttpAdapter().getInstance();
-    const rotas: string[] = [];
+    try {
+      const server = app.getHttpAdapter().getInstance();
+      const rotas: string[] = [];
 
-    server._router.stack.forEach((r: any) => {
-      if (r.route && r.route.path) {
-        // Inclui método HTTP + path
-        const methods = Object.keys(r.route.methods)
-          .map((m) => m.toUpperCase())
-          .join(', ');
-        rotas.push(`${methods} ${r.route.path}`);
+      if (server._router && server._router.stack) {
+        server._router.stack.forEach((r: any) => {
+          if (r.route && r.route.path) {
+            rotas.push(r.route.path);
+          }
+        });
       }
-    });
 
-    res.json(rotas);
+      res.json(rotas);
+    } catch (err) {
+      console.error('Erro ao listar rotas:', err);
+      res.status(500).json({ error: 'Erro ao listar rotas' });
+    }
   });
   // --------------------------------------------
 
