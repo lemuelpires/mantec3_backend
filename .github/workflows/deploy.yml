@@ -1,0 +1,42 @@
+# id="ghactions2"
+name: Deploy Backend Nest
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Login Docker Hub
+        run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USER }}" --password-stdin
+
+      - name: Build imagem
+        run: docker build -t mantecsystems/mantec3-back:latest .
+
+      - name: Push imagem
+        run: docker push mantecsystems/mantec3-back:latest
+
+      - name: Deploy no servidor
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            docker service update \
+              --image mantecsystems/mantec3-back:latest \
+              --update-parallelism 1 \
+              --update-delay 10s \
+              automacao_mantec3 || \
+            docker service create \
+              --name automacao_mantec3 \
+              --network backend \
+              -p 5011:3000 \
+              mantecsystems/mantec3-back:latest
