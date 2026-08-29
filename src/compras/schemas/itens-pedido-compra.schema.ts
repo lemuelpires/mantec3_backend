@@ -38,3 +38,6 @@ export class ItensPedidoCompra {
 
 export const ItensPedidoCompraSchema =
   SchemaFactory.createForClass(ItensPedidoCompra);
+
+ItensPedidoCompraSchema.index({ pedidoCompraId: 1 });
+ItensPedidoCompraSchema.index({ produtoId: 1 });

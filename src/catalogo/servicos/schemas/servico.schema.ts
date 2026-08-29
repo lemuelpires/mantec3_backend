@@ -26,6 +26,8 @@ export class Servico {
 
 export const ServicoSchema = SchemaFactory.createForClass(Servico);
 
+ServicoSchema.index({ empresaId: 1, ativo: 1, nome: 1 });
+
 ServicoSchema.set('toJSON', {
   transform: (_doc: any, ret: any) => {
     // Ensure precoPadrao is serialized as string and provide a numeric 'valor' field

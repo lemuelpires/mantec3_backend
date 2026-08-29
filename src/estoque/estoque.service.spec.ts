@@ -14,6 +14,15 @@ describe('EstoqueService', () => {
     const exec = jest.fn().mockResolvedValue(movimentos);
     const save = jest.fn().mockResolvedValue({ _id: 'movimento-1' });
     const model = jest.fn().mockImplementation((dto) => ({ ...dto, save }));
+    const produtoModel = {
+      findOne: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockReturnValue({
+            exec: jest.fn().mockResolvedValue({ _id: 'produto-1' }),
+          }),
+        }),
+      }),
+    };
     Object.assign(model, {
       find: jest.fn().mockReturnValue({ exec }),
       findById: jest.fn(),
@@ -21,7 +30,7 @@ describe('EstoqueService', () => {
       findByIdAndDelete: jest.fn(),
     });
 
-    return { service: new EstoqueService(model as never, {} as never, {} as never), save };
+    return { service: new EstoqueService(model as never, produtoModel as never, {} as never), save };
   };
 
   it('permite operacao quando ha saldo disponivel', async () => {
@@ -56,9 +65,10 @@ describe('EstoqueService', () => {
 
     await expect(service.create({
       produtoId: 'produto-1',
+      empresaId: 'empresa-1',
       tipo: MOVIMENTO_ESTOQUE_TIPO.SAIDA,
       quantidade: 3,
-    } as never)).rejects.toBeInstanceOf(BadRequestException);
+    } as never, 'user-1', 'empresa-1')).rejects.toBeInstanceOf(BadRequestException);
     expect(save).not.toHaveBeenCalled();
   });
 });

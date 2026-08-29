@@ -3,12 +3,15 @@ import { TermosRecebimentoService } from './termos-recebimento.service';
 import { CreateTermosRecebimentoDto } from './dto/create-termos-recebimento.dto';
 import { UpdateTermosRecebimentoDto } from './dto/update-termos-recebimento.dto';
 import { CurrentUser, type CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import { RequireEvento } from '../../common/decorators/require-evento.decorator';
+import { EVENTOS_NEGOCIO } from '../../permissoes/matriz-permissoes';
 
 @Controller('termos-recebimento')
 export class TermosRecebimentoController {
   constructor(private readonly termosRecebimentoService: TermosRecebimentoService) {}
 
   @Post()
+  @RequireEvento(EVENTOS_NEGOCIO.RECEBIMENTO_GERAR_TERMO)
   create(
     @Body() createTermosRecebimentoDto: CreateTermosRecebimentoDto,
     @Req() req: any,
@@ -18,16 +21,19 @@ export class TermosRecebimentoController {
   }
 
   @Get()
-  findAll() {
-    return this.termosRecebimentoService.findAll();
+  @RequireEvento(EVENTOS_NEGOCIO.RECEBIMENTO_CONSULTAR)
+  findAll(@CurrentUser() user?: CurrentUserPayload) {
+    return this.termosRecebimentoService.findAll(user?.empresaId);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.termosRecebimentoService.findOne(id);
+  @RequireEvento(EVENTOS_NEGOCIO.RECEBIMENTO_CONSULTAR)
+  findOne(@Param('id') id: string, @CurrentUser() user?: CurrentUserPayload) {
+    return this.termosRecebimentoService.findOne(id, user?.empresaId);
   }
 
   @Patch(':id')
+  @RequireEvento(EVENTOS_NEGOCIO.RECEBIMENTO_GERAR_TERMO)
   update(
     @Param('id') id: string,
     @Body() updateTermosRecebimentoDto: UpdateTermosRecebimentoDto,
@@ -38,8 +44,9 @@ export class TermosRecebimentoController {
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.termosRecebimentoService.remove(id);
+  @RequireEvento(EVENTOS_NEGOCIO.RECEBIMENTO_REMOVER)
+  remove(@Param('id') id: string, @CurrentUser() user?: CurrentUserPayload) {
+    return this.termosRecebimentoService.remove(id, user?.empresaId);
   }
 
   private comMetadadosAssinatura<T extends CreateTermosRecebimentoDto | UpdateTermosRecebimentoDto>(dto: T, req: any): T {
@@ -55,11 +62,6 @@ export class TermosRecebimentoController {
   }
 
   private getClientIp(req: any) {
-    const forwardedFor = req?.headers?.['x-forwarded-for'];
-    if (typeof forwardedFor === 'string' && forwardedFor.trim()) {
-      return forwardedFor.split(',')[0].trim();
-    }
-
     return req?.ip || req?.socket?.remoteAddress;
   }
 }

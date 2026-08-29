@@ -7,6 +7,10 @@ import { extname } from 'path';
 import { ProdutosService } from './produtos.service';
 import { CreateProdutoDto } from './dto/create-produto.dto';
 import { UpdateProdutoDto } from './dto/update-produto.dto';
+import { CurrentUser, type CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import { fileFilterSeguro } from '../../common/uploads/upload-security';
+import { RequireEvento } from '../../common/decorators/require-evento.decorator';
+import { EVENTOS_NEGOCIO } from '../../permissoes/matriz-permissoes';
 
 mkdirSync('./uploads/produtos', { recursive: true });
 
@@ -18,6 +22,8 @@ const extensaoPorMimeType: Record<string, string> = {
   'image/heif': '.heif',
 };
 
+const PRODUTO_FOTO_MIME_TYPES = new Set(Object.keys(extensaoPorMimeType));
+
 const produtoFotoStorage = diskStorage({
   destination: './uploads/produtos',
   filename: (_req, file, callback) => {
@@ -27,14 +33,7 @@ const produtoFotoStorage = diskStorage({
   },
 });
 
-const produtoFotoFilter = (_req: unknown, file: { mimetype: string }, callback: (error: Error | null, acceptFile: boolean) => void) => {
-  if (!file.mimetype.startsWith('image/')) {
-    callback(new BadRequestException('A foto do produto deve ser uma imagem.'), false);
-    return;
-  }
-
-  callback(null, true);
-};
+const produtoFotoFilter = fileFilterSeguro(PRODUTO_FOTO_MIME_TYPES, 'A foto do produto');
 
 const montarDadosFotoProduto = (file: any, body: any) => {
   const fotoHashSha256 = createHash('sha256').update(readFileSync(file.path)).digest('hex');
@@ -57,55 +56,62 @@ export class ProdutosController {
   constructor(private readonly produtosService: ProdutosService) {}
 
   @Post()
-  create(@Body() createProdutoDto: CreateProdutoDto) {
-    return this.produtosService.create(createProdutoDto);
+  @RequireEvento(EVENTOS_NEGOCIO.CATALOGO_GERENCIAR)
+  create(@Body() createProdutoDto: CreateProdutoDto, @CurrentUser() user?: CurrentUserPayload) {
+    return this.produtosService.create(createProdutoDto, user?.empresaId);
   }
 
   @Post('upload')
+  @RequireEvento(EVENTOS_NEGOCIO.CATALOGO_GERENCIAR)
   @UseInterceptors(FileInterceptor('foto', {
     storage: produtoFotoStorage,
     fileFilter: produtoFotoFilter,
     limits: { fileSize: 15 * 1024 * 1024 },
   }))
-  createComFoto(@UploadedFile() file: any, @Body() body: any) {
+  createComFoto(@UploadedFile() file: any, @Body() body: any, @CurrentUser() user?: CurrentUserPayload) {
     if (!file) {
-      return this.produtosService.create(body);
+      return this.produtosService.create(body, user?.empresaId);
     }
 
-    return this.produtosService.create(montarDadosFotoProduto(file, body));
+    return this.produtosService.create(montarDadosFotoProduto(file, body), user?.empresaId);
   }
 
   @Get()
-  findAll() {
-    return this.produtosService.findAll();
+  @RequireEvento(EVENTOS_NEGOCIO.CATALOGO_CONSULTAR)
+  findAll(@CurrentUser() user?: CurrentUserPayload) {
+    return this.produtosService.findAll(user?.empresaId);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.produtosService.findOne(id);
+  @RequireEvento(EVENTOS_NEGOCIO.CATALOGO_CONSULTAR)
+  findOne(@Param('id') id: string, @CurrentUser() user?: CurrentUserPayload) {
+    return this.produtosService.findOne(id, user?.empresaId);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateProdutoDto: UpdateProdutoDto) {
-    return this.produtosService.update(id, updateProdutoDto);
+  @RequireEvento(EVENTOS_NEGOCIO.CATALOGO_GERENCIAR)
+  update(@Param('id') id: string, @Body() updateProdutoDto: UpdateProdutoDto, @CurrentUser() user?: CurrentUserPayload) {
+    return this.produtosService.update(id, updateProdutoDto, user?.empresaId);
   }
 
   @Patch(':id/upload')
+  @RequireEvento(EVENTOS_NEGOCIO.CATALOGO_GERENCIAR)
   @UseInterceptors(FileInterceptor('foto', {
     storage: produtoFotoStorage,
     fileFilter: produtoFotoFilter,
     limits: { fileSize: 15 * 1024 * 1024 },
   }))
-  updateComFoto(@Param('id') id: string, @UploadedFile() file: any, @Body() body: any) {
+  updateComFoto(@Param('id') id: string, @UploadedFile() file: any, @Body() body: any, @CurrentUser() user?: CurrentUserPayload) {
     if (!file) {
-      return this.produtosService.update(id, body);
+      return this.produtosService.update(id, body, user?.empresaId);
     }
 
-    return this.produtosService.update(id, montarDadosFotoProduto(file, body));
+    return this.produtosService.update(id, montarDadosFotoProduto(file, body), user?.empresaId);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.produtosService.remove(id);
+  @RequireEvento(EVENTOS_NEGOCIO.CATALOGO_GERENCIAR)
+  remove(@Param('id') id: string, @CurrentUser() user?: CurrentUserPayload) {
+    return this.produtosService.remove(id, user?.empresaId);
   }
 }

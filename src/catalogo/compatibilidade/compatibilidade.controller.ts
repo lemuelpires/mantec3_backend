@@ -8,109 +8,132 @@ import { CreateCompatibilidadeModeloDto } from './dto/create-compatibilidade-mod
 import { UpdateCompatibilidadeModeloDto } from './dto/update-compatibilidade-modelo.dto';
 import { ImportCompatibilidadePeliculasDto } from './dto/import-compatibilidade-peliculas.dto';
 import { ClassificarProdutosCompatibilidadeDto } from './dto/classificar-produtos-compatibilidade.dto';
+import { CurrentUser, type CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import { RequireEvento } from '../../common/decorators/require-evento.decorator';
+import { EVENTOS_NEGOCIO } from '../../permissoes/matriz-permissoes';
 
 @Controller('compatibilidade')
 export class CompatibilidadeController {
   constructor(private readonly compatibilidadeService: CompatibilidadeService) {}
 
   @Post()
-  create(@Body() createDto: CreateCompatibilidadeProdutoDto) {
-    return this.compatibilidadeService.create(createDto);
+  @RequireEvento(EVENTOS_NEGOCIO.CATALOGO_GERENCIAR)
+  create(@Body() createDto: CreateCompatibilidadeProdutoDto, @CurrentUser() user?: CurrentUserPayload) {
+    return this.compatibilidadeService.create(createDto, user?.empresaId);
   }
 
   @Get()
-  findAll() {
-    return this.compatibilidadeService.findAll();
+  @RequireEvento(EVENTOS_NEGOCIO.CATALOGO_CONSULTAR)
+  findAll(@CurrentUser() user?: CurrentUserPayload) {
+    return this.compatibilidadeService.findAll(user?.empresaId);
   }
 
   @Get('produto/:produtoId')
-  findAllByProduto(@Param('produtoId') produtoId: string) {
-    return this.compatibilidadeService.findAllByProduto(produtoId);
+  @RequireEvento(EVENTOS_NEGOCIO.CATALOGO_CONSULTAR)
+  findAllByProduto(@Param('produtoId') produtoId: string, @CurrentUser() user?: CurrentUserPayload) {
+    return this.compatibilidadeService.findAllByProduto(produtoId, user?.empresaId);
   }
 
   @Post('peliculas/importar')
-  importarCompatibilidadePeliculas(@Body() importDto: ImportCompatibilidadePeliculasDto) {
-    return this.compatibilidadeService.importarCompatibilidadePeliculas(importDto);
+  @RequireEvento(EVENTOS_NEGOCIO.CATALOGO_GERENCIAR)
+  importarCompatibilidadePeliculas(@Body() importDto: ImportCompatibilidadePeliculasDto, @CurrentUser() user?: CurrentUserPayload) {
+    return this.compatibilidadeService.importarCompatibilidadePeliculas(importDto, user?.empresaId);
   }
 
   @Post('produtos/classificar')
-  classificarProdutos(@Body() dto: ClassificarProdutosCompatibilidadeDto) {
-    return this.compatibilidadeService.classificarProdutosExistentes(dto.empresaId);
+  @RequireEvento(EVENTOS_NEGOCIO.CATALOGO_GERENCIAR)
+  classificarProdutos(@Body() dto: ClassificarProdutosCompatibilidadeDto, @CurrentUser() user?: CurrentUserPayload) {
+    return this.compatibilidadeService.classificarProdutosExistentes(user?.empresaId ?? dto.empresaId);
   }
 
   @Post('modelos')
-  createModelo(@Body() createDto: CreateAparelhoModeloDto) {
-    return this.compatibilidadeService.createModelo(createDto);
+  @RequireEvento(EVENTOS_NEGOCIO.CATALOGO_GERENCIAR)
+  createModelo(@Body() createDto: CreateAparelhoModeloDto, @CurrentUser() user?: CurrentUserPayload) {
+    return this.compatibilidadeService.createModelo(createDto, user?.empresaId);
   }
 
   @Get('modelos')
-  findAllModelos(@Query('empresaId') empresaId?: string) {
-    return this.compatibilidadeService.findAllModelos(empresaId);
+  @RequireEvento(EVENTOS_NEGOCIO.CATALOGO_CONSULTAR)
+  findAllModelos(@Query('empresaId') empresaId?: string, @CurrentUser() user?: CurrentUserPayload) {
+    return this.compatibilidadeService.findAllModelos(user?.empresaId ?? empresaId);
   }
 
   @Get('modelos/:id')
-  findOneModelo(@Param('id') id: string) {
-    return this.compatibilidadeService.findOneModelo(id);
+  @RequireEvento(EVENTOS_NEGOCIO.CATALOGO_CONSULTAR)
+  findOneModelo(@Param('id') id: string, @CurrentUser() user?: CurrentUserPayload) {
+    return this.compatibilidadeService.findOneModelo(id, user?.empresaId);
   }
 
   @Patch('modelos/:id')
-  updateModelo(@Param('id') id: string, @Body() updateDto: UpdateAparelhoModeloDto) {
-    return this.compatibilidadeService.updateModelo(id, updateDto);
+  @RequireEvento(EVENTOS_NEGOCIO.CATALOGO_GERENCIAR)
+  updateModelo(@Param('id') id: string, @Body() updateDto: UpdateAparelhoModeloDto, @CurrentUser() user?: CurrentUserPayload) {
+    return this.compatibilidadeService.updateModelo(id, updateDto, user?.empresaId);
   }
 
   @Delete('modelos/:id')
-  removeModelo(@Param('id') id: string) {
-    return this.compatibilidadeService.removeModelo(id);
+  @RequireEvento(EVENTOS_NEGOCIO.CATALOGO_GERENCIAR)
+  removeModelo(@Param('id') id: string, @CurrentUser() user?: CurrentUserPayload) {
+    return this.compatibilidadeService.removeModelo(id, user?.empresaId);
   }
 
   @Post('modelos-relacoes')
-  createCompatibilidadeModelo(@Body() createDto: CreateCompatibilidadeModeloDto) {
-    return this.compatibilidadeService.createCompatibilidadeModelo(createDto);
+  @RequireEvento(EVENTOS_NEGOCIO.CATALOGO_GERENCIAR)
+  createCompatibilidadeModelo(@Body() createDto: CreateCompatibilidadeModeloDto, @CurrentUser() user?: CurrentUserPayload) {
+    return this.compatibilidadeService.createCompatibilidadeModelo(createDto, user?.empresaId);
   }
 
   @Get('modelos-relacoes')
-  findAllCompatibilidadesModelo(@Query('empresaId') empresaId?: string) {
-    return this.compatibilidadeService.findAllCompatibilidadesModelo(empresaId);
+  @RequireEvento(EVENTOS_NEGOCIO.CATALOGO_CONSULTAR)
+  findAllCompatibilidadesModelo(@Query('empresaId') empresaId?: string, @CurrentUser() user?: CurrentUserPayload) {
+    return this.compatibilidadeService.findAllCompatibilidadesModelo(user?.empresaId ?? empresaId);
   }
 
   @Get('modelos-relacoes/:id')
-  findOneCompatibilidadeModelo(@Param('id') id: string) {
-    return this.compatibilidadeService.findOneCompatibilidadeModelo(id);
+  @RequireEvento(EVENTOS_NEGOCIO.CATALOGO_CONSULTAR)
+  findOneCompatibilidadeModelo(@Param('id') id: string, @CurrentUser() user?: CurrentUserPayload) {
+    return this.compatibilidadeService.findOneCompatibilidadeModelo(id, user?.empresaId);
   }
 
   @Patch('modelos-relacoes/:id')
-  updateCompatibilidadeModelo(@Param('id') id: string, @Body() updateDto: UpdateCompatibilidadeModeloDto) {
-    return this.compatibilidadeService.updateCompatibilidadeModelo(id, updateDto);
+  @RequireEvento(EVENTOS_NEGOCIO.CATALOGO_GERENCIAR)
+  updateCompatibilidadeModelo(@Param('id') id: string, @Body() updateDto: UpdateCompatibilidadeModeloDto, @CurrentUser() user?: CurrentUserPayload) {
+    return this.compatibilidadeService.updateCompatibilidadeModelo(id, updateDto, user?.empresaId);
   }
 
   @Delete('modelos-relacoes/:id')
-  removeCompatibilidadeModelo(@Param('id') id: string) {
-    return this.compatibilidadeService.removeCompatibilidadeModelo(id);
+  @RequireEvento(EVENTOS_NEGOCIO.CATALOGO_GERENCIAR)
+  removeCompatibilidadeModelo(@Param('id') id: string, @CurrentUser() user?: CurrentUserPayload) {
+    return this.compatibilidadeService.removeCompatibilidadeModelo(id, user?.empresaId);
   }
 
   @Get('peliculas/sugestoes')
+  @RequireEvento(EVENTOS_NEGOCIO.CATALOGO_CONSULTAR)
   getSugestoesPeliculas(
     @Query('empresaId') empresaId?: string,
     @Query('marca') marca?: string,
     @Query('modelo') modelo?: string,
     @Query('origemTipo') origemTipo?: string,
     @Query('origemId') origemId?: string,
+    @CurrentUser() user?: CurrentUserPayload,
   ) {
-    return this.compatibilidadeService.getSugestoesPeliculas({ empresaId, marca, modelo, origemTipo, origemId });
+    return this.compatibilidadeService.getSugestoesPeliculas({ empresaId: user?.empresaId ?? empresaId, marca, modelo, origemTipo, origemId });
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.compatibilidadeService.findOne(id);
+  @RequireEvento(EVENTOS_NEGOCIO.CATALOGO_CONSULTAR)
+  findOne(@Param('id') id: string, @CurrentUser() user?: CurrentUserPayload) {
+    return this.compatibilidadeService.findOne(id, user?.empresaId);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateDto: UpdateCompatibilidadeProdutoDto) {
-    return this.compatibilidadeService.update(id, updateDto);
+  @RequireEvento(EVENTOS_NEGOCIO.CATALOGO_GERENCIAR)
+  update(@Param('id') id: string, @Body() updateDto: UpdateCompatibilidadeProdutoDto, @CurrentUser() user?: CurrentUserPayload) {
+    return this.compatibilidadeService.update(id, updateDto, user?.empresaId);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.compatibilidadeService.remove(id);
+  @RequireEvento(EVENTOS_NEGOCIO.CATALOGO_GERENCIAR)
+  remove(@Param('id') id: string, @CurrentUser() user?: CurrentUserPayload) {
+    return this.compatibilidadeService.remove(id, user?.empresaId);
   }
 }

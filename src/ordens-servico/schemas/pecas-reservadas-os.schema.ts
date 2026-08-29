@@ -16,3 +16,6 @@ export class PecasReservadasOS {
 }
 
 export const PecasReservadasOSSchema = SchemaFactory.createForClass(PecasReservadasOS);
+
+PecasReservadasOSSchema.index({ ordemServicoId: 1 });
+PecasReservadasOSSchema.index({ produtoId: 1 });

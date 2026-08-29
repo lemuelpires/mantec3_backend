@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { NotaFiscalServico, NotaFiscalServicoDocument } from './nota-fiscal-servico.schema';
@@ -29,10 +29,10 @@ export class NotaFiscalServicoService {
   }
 
   async findAll(empresaId?: string) {
-    const query: Record<string, unknown> = {};
-    if (empresaId) {
-      query.vendaId = { $in: await this.getVendaIdsEmpresa(empresaId) };
-    }
+    this.assertEmpresaInformada(empresaId);
+    const query: Record<string, unknown> = {
+      vendaId: { $in: await this.getVendaIdsEmpresa(empresaId) },
+    };
 
     return this.notaFiscalServicoModel
       .find(query)
@@ -104,10 +104,9 @@ export class NotaFiscalServicoService {
   }
 
   private async getVendaDaEmpresa(vendaId: string, empresaId?: string) {
+    this.assertEmpresaInformada(empresaId);
     const query: Record<string, unknown> = { _id: vendaId };
-    if (empresaId) {
-      query.empresaId = empresaId;
-    }
+    query.empresaId = empresaId;
 
     const venda = await this.vendaModel.findOne(query).exec();
     if (!venda) {
@@ -115,6 +114,12 @@ export class NotaFiscalServicoService {
     }
 
     return venda;
+  }
+
+  private assertEmpresaInformada(empresaId?: string): asserts empresaId is string {
+    if (!empresaId) {
+      throw new UnauthorizedException('Empresa do usuario nao informada.');
+    }
   }
 
   private async getVendaIdsEmpresa(empresaId: string) {

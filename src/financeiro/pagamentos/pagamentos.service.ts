@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Pagamento, PagamentoDocument } from './schemas/pagamento.schema';
@@ -9,6 +9,7 @@ import { VENDA_STATUS_FINANCEIRO, calcularStatusFinanceiroVenda, decimalToNumber
 import { AuditoriaService } from '../../auditoria/auditoria.service';
 import { AUDITORIA_ENTIDADES, AUDITORIA_EVENTOS } from '../../auditoria/auditoria-eventos';
 import { FinanceiroAdmService } from '../financeiro-adm/financeiro-adm.service';
+import { centavosParaDecimal128, dinheiroParaCentavos } from '../financeiro-adm/financeiro-adm.types';
 
 @Injectable()
 export class PagamentosService {
@@ -24,21 +25,21 @@ export class PagamentosService {
 
     this.assertVendaPodeReceberPagamento(venda.statusFinanceiro);
 
-    const valorPagamento = Number(createPagamentoDto.valor);
-    if (!Number.isFinite(valorPagamento) || valorPagamento <= 0) {
+    const valorPagamentoCentavos = this.parseValorCentavos(createPagamentoDto.valor, 'valor');
+    if (valorPagamentoCentavos <= 0) {
       throw new BadRequestException('Valor do pagamento deve ser maior que zero.');
     }
 
-    const totalJaPago = await this.getTotalPagoVenda(createPagamentoDto.vendaId);
-    const totalVenda = decimalToNumber(venda.total);
+    const totalJaPagoCentavos = await this.getTotalPagoVendaCentavos(createPagamentoDto.vendaId);
+    const totalVendaCentavos = dinheiroParaCentavos(venda.total);
 
-    if (totalJaPago + valorPagamento > totalVenda + 0.00001) {
-      const restante = Math.max(totalVenda - totalJaPago, 0);
-      throw new BadRequestException(`Pagamento maior que o saldo restante da venda. Restante: R$ ${restante.toFixed(2)}. Informado: R$ ${valorPagamento.toFixed(2)}.`);
+    if (totalJaPagoCentavos + valorPagamentoCentavos > totalVendaCentavos) {
+      const restante = Math.max(totalVendaCentavos - totalJaPagoCentavos, 0) / 100;
+      throw new BadRequestException(`Pagamento maior que o saldo restante da venda. Restante: R$ ${restante.toFixed(2)}. Informado: R$ ${(valorPagamentoCentavos / 100).toFixed(2)}.`);
     }
 
     const pagamentoData: Record<string, unknown> = { ...createPagamentoDto };
-    pagamentoData.valor = Types.Decimal128.fromString(createPagamentoDto.valor);
+    pagamentoData.valor = centavosParaDecimal128(valorPagamentoCentavos);
 
     const createdPagamento = new this.pagamentoModel(pagamentoData);
     const saved = await createdPagamento.save();
@@ -54,16 +55,7 @@ export class PagamentosService {
   }
 
   async findAll(empresaId?: string) {
-    if (!empresaId) {
-      return this.pagamentoModel
-        .find()
-        .populate({
-          path: 'vendaId',
-          select: 'numero total clienteId criadoEm statusFinanceiro',
-          populate: { path: 'clienteId', select: 'nome cpfCnpj email' },
-        })
-        .exec();
-    }
+    this.assertEmpresaInformada(empresaId);
 
     const vendaIds = await this.getVendaIdsEmpresa(empresaId);
     return this.pagamentoModel
@@ -106,19 +98,19 @@ export class PagamentosService {
 
     const updateData: Record<string, unknown> = { ...updatePagamentoDto };
     if (updatePagamentoDto.valor) {
-      const novoValor = Number(updatePagamentoDto.valor);
-      if (!Number.isFinite(novoValor) || novoValor <= 0) {
+      const novoValorCentavos = this.parseValorCentavos(updatePagamentoDto.valor, 'valor');
+      if (novoValorCentavos <= 0) {
         throw new BadRequestException('Valor do pagamento deve ser maior que zero.');
       }
 
-      const totalPagoSemPagamentoAtual = await this.getTotalPagoVenda(vendaId, id);
-      const totalVenda = decimalToNumber(venda.total);
-      if (totalPagoSemPagamentoAtual + novoValor > totalVenda + 0.00001) {
-        const restante = Math.max(totalVenda - totalPagoSemPagamentoAtual, 0);
-        throw new BadRequestException(`Pagamento maior que o saldo restante da venda. Restante: R$ ${restante.toFixed(2)}. Informado: R$ ${novoValor.toFixed(2)}.`);
+      const totalPagoSemPagamentoAtualCentavos = await this.getTotalPagoVendaCentavos(vendaId, id);
+      const totalVendaCentavos = dinheiroParaCentavos(venda.total);
+      if (totalPagoSemPagamentoAtualCentavos + novoValorCentavos > totalVendaCentavos) {
+        const restante = Math.max(totalVendaCentavos - totalPagoSemPagamentoAtualCentavos, 0) / 100;
+        throw new BadRequestException(`Pagamento maior que o saldo restante da venda. Restante: R$ ${restante.toFixed(2)}. Informado: R$ ${(novoValorCentavos / 100).toFixed(2)}.`);
       }
 
-      updateData.valor = Types.Decimal128.fromString(updatePagamentoDto.valor);
+      updateData.valor = centavosParaDecimal128(novoValorCentavos);
     }
 
     await this.financeiroAdmService.estornarPagamentoVenda(
@@ -128,7 +120,7 @@ export class PagamentosService {
       'Estorno automatico para atualizacao do pagamento.',
     );
 
-    const updated = await this.pagamentoModel.findByIdAndUpdate(id, updateData, { new: true }).exec();
+    const updated = await this.pagamentoModel.findOneAndUpdate({ _id: id, vendaId: venda._id }, updateData, { new: true }).exec();
     await this.atualizarStatusFinanceiroVenda(vendaId);
 
     if (updated) {
@@ -156,7 +148,7 @@ export class PagamentosService {
       actorEmpresaId,
       'Estorno automatico pela remocao do pagamento.',
     );
-    const removed = await this.pagamentoModel.findByIdAndDelete(id).exec();
+    const removed = await this.pagamentoModel.findOneAndDelete({ _id: id, vendaId: venda._id }).exec();
     await this.atualizarStatusFinanceiroVenda(vendaId);
 
     if (actorId && removed && venda) {
@@ -201,14 +193,14 @@ export class PagamentosService {
     }
   }
 
-  private async getTotalPagoVenda(vendaId: string, ignoredPagamentoId?: string) {
+  private async getTotalPagoVendaCentavos(vendaId: string, ignoredPagamentoId?: string) {
     const query: Record<string, unknown> = { vendaId };
     if (ignoredPagamentoId) {
       query._id = { $ne: ignoredPagamentoId };
     }
 
     const pagamentos = await this.pagamentoModel.find(query).exec();
-    return pagamentos.reduce((total, pagamento) => total + decimalToNumber(pagamento.valor), 0);
+    return pagamentos.reduce((total, pagamento) => total + dinheiroParaCentavos(pagamento.valor), 0);
   }
 
   private async atualizarStatusFinanceiroVenda(vendaId: string) {
@@ -217,17 +209,16 @@ export class PagamentosService {
       return;
     }
 
-    const totalPago = await this.getTotalPagoVenda(vendaId);
-    const statusFinanceiro = calcularStatusFinanceiroVenda(venda.total, totalPago);
+    const totalPagoCentavos = await this.getTotalPagoVendaCentavos(vendaId);
+    const statusFinanceiro = calcularStatusFinanceiroVenda(venda.total, totalPagoCentavos / 100);
 
     await this.vendaModel.findByIdAndUpdate(vendaId, { statusFinanceiro }, { new: true }).exec();
   }
 
   private async getVendaDaEmpresa(vendaId: string, empresaId?: string) {
+    this.assertEmpresaInformada(empresaId);
     const query: Record<string, unknown> = { _id: vendaId };
-    if (empresaId) {
-      query.empresaId = empresaId;
-    }
+    query.empresaId = empresaId;
 
     const venda = await this.vendaModel.findOne(query).exec();
     if (!venda) {
@@ -237,9 +228,24 @@ export class PagamentosService {
     return venda;
   }
 
+  private assertEmpresaInformada(empresaId?: string): asserts empresaId is string {
+    if (!empresaId) {
+      throw new UnauthorizedException('Empresa do usuario nao informada.');
+    }
+  }
+
   private async getVendaIdsEmpresa(empresaId: string) {
     const vendas = await this.vendaModel.find({ empresaId }).select('_id').lean().exec();
     return vendas.map((venda) => venda._id);
+  }
+
+  private parseValorCentavos(value: unknown, campo: string) {
+    const centavos = dinheiroParaCentavos(value);
+    if (!Number.isFinite(centavos)) {
+      throw new BadRequestException(`${campo} invalido.`);
+    }
+
+    return centavos;
   }
 
   private async registrarAuditoriaPagamento(

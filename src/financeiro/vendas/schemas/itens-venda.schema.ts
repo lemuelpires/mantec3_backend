@@ -25,3 +25,5 @@ export class ItensVenda {
 }
 
 export const ItensVendaSchema = SchemaFactory.createForClass(ItensVenda);
+
+ItensVendaSchema.index({ vendaId: 1 });

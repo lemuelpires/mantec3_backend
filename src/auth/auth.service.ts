@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { UsuariosService } from '../usuarios/usuarios.service';
 import { LoginDto } from './dto/login.dto';
+import { getRequiredSecret } from '../config/security.config';
 
 type TokenPayload = {
   sub: string;
@@ -100,10 +101,10 @@ export class AuthService {
   }
 
   private getSecret() {
-    return (
-      this.configService.get<string>('AUTH_TOKEN_SECRET') ||
-      this.configService.get<string>('JWT_SECRET') ||
-      'mantec-local-dev-secret'
+    return getRequiredSecret(
+      this.configService,
+      ['AUTH_TOKEN_SECRET', 'JWT_SECRET'],
+      'mantec-local-dev-secret',
     );
   }
 }

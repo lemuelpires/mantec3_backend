@@ -31,3 +31,7 @@ export class Venda {
 }
 
 export const VendaSchema = SchemaFactory.createForClass(Venda);
+
+VendaSchema.index({ empresaId: 1, statusFinanceiro: 1, criadoEm: -1 });
+VendaSchema.index({ empresaId: 1, clienteId: 1, criadoEm: -1 });
+VendaSchema.index({ empresaId: 1, origemTipo: 1, origemId: 1 });

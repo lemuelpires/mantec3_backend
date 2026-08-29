@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import {
@@ -56,33 +56,57 @@ export class CompatibilidadeService {
     private recebimentoEquipamentoModel: Model<RecebimentoEquipamentoDocument>,
   ) {}
 
-  create(createDto: CreateCompatibilidadeProdutoDto) {
+  async create(createDto: CreateCompatibilidadeProdutoDto, empresaId?: string) {
+    await this.assertProdutoDaEmpresa(createDto.produtoId, empresaId);
     const created = new this.compatibilidadeModel(createDto);
     return created.save();
   }
 
-  findAll() {
-    return this.compatibilidadeModel.find().exec();
+  async findAll(empresaId?: string) {
+    const produtoIds = await this.getProdutoIdsDaEmpresa(empresaId);
+    return this.compatibilidadeModel.find({ produtoId: { $in: produtoIds } }).exec();
   }
 
   // Find all compatibilities for a given product
-  findAllByProduto(produtoId: string) {
+  async findAllByProduto(produtoId: string, empresaId?: string) {
+    await this.assertProdutoDaEmpresa(produtoId, empresaId);
     return this.compatibilidadeModel.find({ produtoId }).exec();
   }
 
-  findOne(id: string) {
-    return this.compatibilidadeModel.findById(id).exec();
+  async findOne(id: string, empresaId?: string) {
+    const compatibilidade = await this.compatibilidadeModel.findById(id).exec();
+    if (!compatibilidade) {
+      return null;
+    }
+
+    await this.assertProdutoDaEmpresa(compatibilidade.produtoId.toString(), empresaId);
+    return compatibilidade;
   }
 
-  update(id: string, updateDto: UpdateCompatibilidadeProdutoDto) {
+  async update(id: string, updateDto: UpdateCompatibilidadeProdutoDto, empresaId?: string) {
+    const current = await this.findOne(id, empresaId);
+    if (!current) {
+      throw new NotFoundException('Compatibilidade nao encontrada.');
+    }
+
+    if (updateDto.produtoId) {
+      await this.assertProdutoDaEmpresa(updateDto.produtoId, empresaId);
+    }
+
     return this.compatibilidadeModel.findByIdAndUpdate(id, updateDto, { new: true }).exec();
   }
 
-  remove(id: string) {
+  async remove(id: string, empresaId?: string) {
+    const current = await this.findOne(id, empresaId);
+    if (!current) {
+      throw new NotFoundException('Compatibilidade nao encontrada.');
+    }
+
     return this.compatibilidadeModel.findByIdAndDelete(id).exec();
   }
 
-  async importarCompatibilidadePeliculas(importDto: ImportCompatibilidadePeliculasDto) {
+  async importarCompatibilidadePeliculas(importDto: ImportCompatibilidadePeliculasDto, empresaId?: string) {
+    const scopedEmpresaId = this.getEmpresaIdPermitida(importDto.empresaId, empresaId);
     const linhas = this.getLinhasImportacao(importDto);
     const resultado = {
       linhasRecebidas: linhas.length,
@@ -110,7 +134,7 @@ export class CompatibilidadeService {
           continue;
         }
 
-        const base = await this.findOrCreateModeloImportado(baseInput, importDto.empresaId);
+        const base = await this.findOrCreateModeloImportado(baseInput, scopedEmpresaId);
         if (base.created) {
           resultado.modelosCriados += 1;
         } else if (base.updated) {
@@ -123,14 +147,14 @@ export class CompatibilidadeService {
             continue;
           }
 
-          const compat = await this.findOrCreateModeloImportado(compatInput, importDto.empresaId);
+          const compat = await this.findOrCreateModeloImportado(compatInput, scopedEmpresaId);
           if (compat.created) {
             resultado.modelosCriados += 1;
           } else if (compat.updated) {
             resultado.modelosAtualizados += 1;
           }
 
-          const relacao = await this.findOrCreateRelacaoImportada(String(base.modelo._id), String(compat.modelo._id), importDto.empresaId);
+          const relacao = await this.findOrCreateRelacaoImportada(String(base.modelo._id), String(compat.modelo._id), scopedEmpresaId);
           if (relacao.created) {
             resultado.relacoesCriadas += 1;
           } else {
@@ -204,8 +228,11 @@ export class CompatibilidadeService {
     return resultado;
   }
 
-  createModelo(createDto: CreateAparelhoModeloDto) {
-    const data = this.montarModeloData(createDto);
+  createModelo(createDto: CreateAparelhoModeloDto, empresaId?: string) {
+    const data = this.montarModeloData({
+      ...createDto,
+      empresaId: this.getEmpresaIdPermitida(createDto.empresaId, empresaId),
+    });
     const created = new this.aparelhoModeloModel(data);
     return created.save();
   }
@@ -217,22 +244,32 @@ export class CompatibilidadeService {
       .exec();
   }
 
-  findOneModelo(id: string) {
-    return this.aparelhoModeloModel.findById(id).exec();
+  findOneModelo(id: string, empresaId?: string) {
+    return this.aparelhoModeloModel.findOne(this.getEmpresaQuery(empresaId, { _id: id })).exec();
   }
 
-  updateModelo(id: string, updateDto: UpdateAparelhoModeloDto) {
-    const data = this.montarModeloData(updateDto);
-    return this.aparelhoModeloModel.findByIdAndUpdate(id, data, { new: true }).exec();
+  updateModelo(id: string, updateDto: UpdateAparelhoModeloDto, empresaId?: string) {
+    const data = this.montarModeloData({
+      ...updateDto,
+      ...(empresaId ? { empresaId } : {}),
+    });
+    return this.aparelhoModeloModel.findOneAndUpdate(this.getEmpresaQuery(empresaId, { _id: id }), data, { new: true }).exec();
   }
 
-  removeModelo(id: string) {
-    return this.aparelhoModeloModel.findByIdAndDelete(id).exec();
+  removeModelo(id: string, empresaId?: string) {
+    return this.aparelhoModeloModel.findOneAndDelete(this.getEmpresaQuery(empresaId, { _id: id })).exec();
   }
 
-  createCompatibilidadeModelo(createDto: CreateCompatibilidadeModeloDto) {
+  async createCompatibilidadeModelo(createDto: CreateCompatibilidadeModeloDto, empresaId?: string) {
+    const scopedEmpresaId = this.getEmpresaIdPermitida(createDto.empresaId, empresaId);
+    await Promise.all([
+      this.assertModeloDaEmpresa(createDto.modeloBaseId, scopedEmpresaId),
+      this.assertModeloDaEmpresa(createDto.modeloCompativelId, scopedEmpresaId),
+    ]);
+
     const created = new this.compatibilidadeModeloModel({
       ...createDto,
+      empresaId: scopedEmpresaId,
       tipoProduto: createDto.tipoProduto || 'pelicula',
     });
     return created.save();
@@ -247,20 +284,37 @@ export class CompatibilidadeService {
       .exec();
   }
 
-  findOneCompatibilidadeModelo(id: string) {
+  findOneCompatibilidadeModelo(id: string, empresaId?: string) {
     return this.compatibilidadeModeloModel
-      .findById(id)
+      .findOne(this.getEmpresaQuery(empresaId, { _id: id }))
       .populate('modeloBaseId', 'marca modelo aliases')
       .populate('modeloCompativelId', 'marca modelo aliases')
       .exec();
   }
 
-  updateCompatibilidadeModelo(id: string, updateDto: UpdateCompatibilidadeModeloDto) {
-    return this.compatibilidadeModeloModel.findByIdAndUpdate(id, updateDto, { new: true }).exec();
+  async updateCompatibilidadeModelo(id: string, updateDto: UpdateCompatibilidadeModeloDto, empresaId?: string) {
+    const current = await this.findOneCompatibilidadeModelo(id, empresaId);
+    if (!current) {
+      throw new NotFoundException('Compatibilidade de modelo nao encontrada.');
+    }
+
+    if (updateDto.modeloBaseId) {
+      await this.assertModeloDaEmpresa(updateDto.modeloBaseId, empresaId);
+    }
+    if (updateDto.modeloCompativelId) {
+      await this.assertModeloDaEmpresa(updateDto.modeloCompativelId, empresaId);
+    }
+
+    const data = {
+      ...updateDto,
+      ...(empresaId ? { empresaId } : {}),
+    };
+
+    return this.compatibilidadeModeloModel.findOneAndUpdate(this.getEmpresaQuery(empresaId, { _id: id }), data, { new: true }).exec();
   }
 
-  removeCompatibilidadeModelo(id: string) {
-    return this.compatibilidadeModeloModel.findByIdAndDelete(id).exec();
+  removeCompatibilidadeModelo(id: string, empresaId?: string) {
+    return this.compatibilidadeModeloModel.findOneAndDelete(this.getEmpresaQuery(empresaId, { _id: id })).exec();
   }
 
   async getSugestoesPeliculas(params: SugestoesPeliculasParams) {
@@ -510,12 +564,15 @@ export class CompatibilidadeService {
 
   private async getEquipamentoConsulta(params: SugestoesPeliculasParams) {
     if (params.origemTipo === 'ordem_servico' && params.origemId) {
-      const ordem = await this.ordemServicoModel.findById(params.origemId).lean().exec();
+      const ordem = await this.ordemServicoModel
+        .findOne(this.getStrictEmpresaQuery(params.empresaId, { _id: params.origemId }))
+        .lean()
+        .exec();
       if (!ordem?.recebimentoEquipamentoId) {
         return null;
       }
       const recebimento = await this.recebimentoEquipamentoModel
-        .findById(ordem.recebimentoEquipamentoId)
+        .findOne(this.getStrictEmpresaQuery(params.empresaId, { _id: ordem.recebimentoEquipamentoId }))
         .select('empresaId marca modelo imeiOuSerial tipoEquipamento')
         .lean()
         .exec();
@@ -639,6 +696,53 @@ export class CompatibilidadeService {
 
   private escapeRegExp(value: string) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  private async getProdutoIdsDaEmpresa(empresaId?: string) {
+    this.assertEmpresaInformada(empresaId);
+    const produtos = await this.produtoModel.find({ empresaId }).select('_id').lean().exec();
+    return produtos.map((produto) => produto._id);
+  }
+
+  private async assertProdutoDaEmpresa(produtoId: string, empresaId?: string) {
+    this.assertEmpresaInformada(empresaId);
+    const produto = await this.produtoModel.findOne({ _id: produtoId, empresaId }).select('_id').lean().exec();
+    if (!produto) {
+      throw new NotFoundException('Produto nao encontrado.');
+    }
+  }
+
+  private async assertModeloDaEmpresa(modeloId: string, empresaId?: string) {
+    const modelo = await this.aparelhoModeloModel
+      .findOne(this.getEmpresaQuery(empresaId, { _id: modeloId }))
+      .select('_id')
+      .lean()
+      .exec();
+    if (!modelo) {
+      throw new NotFoundException('Modelo de aparelho nao encontrado.');
+    }
+  }
+
+  private getEmpresaIdPermitida(inputEmpresaId?: string, userEmpresaId?: string) {
+    if (userEmpresaId) {
+      if (inputEmpresaId && String(inputEmpresaId) !== String(userEmpresaId)) {
+        throw new UnauthorizedException('Empresa informada nao pertence ao usuario.');
+      }
+      return userEmpresaId;
+    }
+
+    return inputEmpresaId;
+  }
+
+  private getStrictEmpresaQuery(empresaId?: string, base: Record<string, unknown> = {}) {
+    this.assertEmpresaInformada(empresaId);
+    return { ...base, empresaId };
+  }
+
+  private assertEmpresaInformada(empresaId?: string) {
+    if (!empresaId) {
+      throw new UnauthorizedException('Empresa do usuario nao informada.');
+    }
   }
 
   private getEmpresaQuery(empresaId?: string, base: Record<string, unknown> = {}) {

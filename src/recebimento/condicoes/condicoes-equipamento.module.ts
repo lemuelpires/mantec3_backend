@@ -3,10 +3,14 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { CondicoesEquipamentoService } from './condicoes-equipamento.service';
 import { CondicoesEquipamentoController } from './condicoes-equipamento.controller';
 import { CondicoesEquipamento, CondicoesEquipamentoSchema } from './condicoes-equipamento.schema';
+import { RecebimentoEquipamento, RecebimentoEquipamentoSchema } from '../recebimento-equipamento/recebimento-equipamento.schema';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: CondicoesEquipamento.name, schema: CondicoesEquipamentoSchema }]),
+    MongooseModule.forFeature([
+      { name: CondicoesEquipamento.name, schema: CondicoesEquipamentoSchema },
+      { name: RecebimentoEquipamento.name, schema: RecebimentoEquipamentoSchema },
+    ]),
   ],
   controllers: [CondicoesEquipamentoController],
   providers: [CondicoesEquipamentoService],

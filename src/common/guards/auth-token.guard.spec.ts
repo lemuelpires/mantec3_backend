@@ -12,6 +12,8 @@ type MockRequest = {
 
 function createContext(request: MockRequest) {
   return {
+    getHandler: () => ({}),
+    getClass: () => ({}),
     switchToHttp: () => ({
       getRequest: () => request,
     }),
@@ -19,8 +21,17 @@ function createContext(request: MockRequest) {
 }
 
 describe('AuthTokenGuard', () => {
+  const reflector = {
+    getAllAndOverride: jest.fn().mockReturnValue(false),
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    reflector.getAllAndOverride.mockReturnValue(false);
+  });
+
   it('bloqueia requisicao sem token', () => {
-    const guard = new AuthTokenGuard({ verifyToken: jest.fn() } as never);
+    const guard = new AuthTokenGuard({ verifyToken: jest.fn() } as never, reflector as never);
 
     expect(() => guard.canActivate(createContext({ headers: {} }))).toThrow(UnauthorizedException);
   });
@@ -29,15 +40,18 @@ describe('AuthTokenGuard', () => {
     const request: MockRequest = {
       headers: { authorization: 'Bearer token-valido' },
     };
-    const guard = new AuthTokenGuard({
-      verifyToken: jest.fn().mockReturnValue({
-        sub: '507f1f77bcf86cd799439011',
-        nome: 'Tecnico',
-        email: 'tecnico@mantec.local',
-        empresaId: '507f1f77bcf86cd799439012',
-        perfil: 'tecnico',
-      }),
-    } as never);
+    const guard = new AuthTokenGuard(
+      {
+        verifyToken: jest.fn().mockReturnValue({
+          sub: '507f1f77bcf86cd799439011',
+          nome: 'Tecnico',
+          email: 'tecnico@mantec.local',
+          empresaId: '507f1f77bcf86cd799439012',
+          perfil: 'tecnico',
+        }),
+      } as never,
+      reflector as never,
+    );
 
     expect(guard.canActivate(createContext(request))).toBe(true);
     expect(request.user).toEqual({

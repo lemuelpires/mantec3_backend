@@ -64,3 +64,7 @@ export class Produto {
 }
 
 export const ProdutoSchema = SchemaFactory.createForClass(Produto);
+
+ProdutoSchema.index({ empresaId: 1, ativo: 1, nome: 1 });
+ProdutoSchema.index({ empresaId: 1, codigoInterno: 1 });
+ProdutoSchema.index({ empresaId: 1, tipoProduto: 1, aparelhoModeloId: 1 });

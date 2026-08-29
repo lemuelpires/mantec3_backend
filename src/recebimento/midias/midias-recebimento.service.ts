@@ -1,17 +1,20 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { MidiasRecebimento, MidiasRecebimentoDocument } from './midias-recebimento.schema';
 import { CreateMidiasRecebimentoDto } from './dto/create-midias-recebimento.dto';
 import { UpdateMidiasRecebimentoDto } from './dto/update-midias-recebimento.dto';
+import { RecebimentoEquipamento, RecebimentoEquipamentoDocument } from '../recebimento-equipamento/recebimento-equipamento.schema';
 
 @Injectable()
 export class MidiasRecebimentoService {
   constructor(
     @InjectModel(MidiasRecebimento.name) private midiasRecebimentoModel: Model<MidiasRecebimentoDocument>,
+    @InjectModel(RecebimentoEquipamento.name) private recebimentoEquipamentoModel: Model<RecebimentoEquipamentoDocument>,
   ) {}
 
-  create(createMidiasRecebimentoDto: CreateMidiasRecebimentoDto) {
+  async create(createMidiasRecebimentoDto: CreateMidiasRecebimentoDto, empresaId?: string) {
+    await this.assertRecebimentoDaEmpresa(createMidiasRecebimentoDto.recebimentoEquipamentoId, empresaId);
     const createdMidiasRecebimento = new this.midiasRecebimentoModel({
       ...createMidiasRecebimentoDto,
       urlArquivo: this.normalizarUrlArquivo(createMidiasRecebimentoDto.urlArquivo),
@@ -20,15 +23,30 @@ export class MidiasRecebimentoService {
     return createdMidiasRecebimento.save();
   }
 
-  findAll() {
-    return this.midiasRecebimentoModel.find().exec();
+  async findAll(empresaId?: string) {
+    const recebimentoIds = await this.getRecebimentoIdsDaEmpresa(empresaId);
+    return this.midiasRecebimentoModel.find({ recebimentoEquipamentoId: { $in: recebimentoIds } }).exec();
   }
 
-  findOne(id: string) {
-    return this.midiasRecebimentoModel.findById(id).exec();
+  async findOne(id: string, empresaId?: string) {
+    const midia = await this.midiasRecebimentoModel.findById(id).exec();
+    if (!midia) {
+      return null;
+    }
+
+    await this.assertRecebimentoDaEmpresa(midia.recebimentoEquipamentoId, empresaId);
+    return midia;
   }
 
-  update(id: string, updateMidiasRecebimentoDto: UpdateMidiasRecebimentoDto) {
+  async update(id: string, updateMidiasRecebimentoDto: UpdateMidiasRecebimentoDto, empresaId?: string) {
+    const current = await this.findOne(id, empresaId);
+    if (!current) {
+      throw new NotFoundException('Midia do recebimento nao encontrada.');
+    }
+    if (updateMidiasRecebimentoDto.recebimentoEquipamentoId) {
+      await this.assertRecebimentoDaEmpresa(updateMidiasRecebimentoDto.recebimentoEquipamentoId, empresaId);
+    }
+
     const updateData = {
       ...updateMidiasRecebimentoDto,
       ...(updateMidiasRecebimentoDto.urlArquivo
@@ -42,8 +60,37 @@ export class MidiasRecebimentoService {
     return this.midiasRecebimentoModel.findByIdAndUpdate(id, updateData, { new: true }).exec();
   }
 
-  remove(id: string) {
+  async remove(id: string, empresaId?: string) {
+    const current = await this.findOne(id, empresaId);
+    if (!current) {
+      throw new NotFoundException('Midia do recebimento nao encontrada.');
+    }
+
     return this.midiasRecebimentoModel.findByIdAndDelete(id).exec();
+  }
+
+  private async getRecebimentoIdsDaEmpresa(empresaId?: string) {
+    this.assertEmpresaInformada(empresaId);
+    const recebimentos = await this.recebimentoEquipamentoModel.find({ empresaId }).select('_id').lean().exec();
+    return recebimentos.map((recebimento) => recebimento._id);
+  }
+
+  private async assertRecebimentoDaEmpresa(recebimentoEquipamentoId: unknown, empresaId?: string) {
+    this.assertEmpresaInformada(empresaId);
+    const recebimento = await this.recebimentoEquipamentoModel
+      .findOne({ _id: String(recebimentoEquipamentoId), empresaId })
+      .select('_id')
+      .lean()
+      .exec();
+    if (!recebimento) {
+      throw new NotFoundException('Recebimento nao encontrado.');
+    }
+  }
+
+  private assertEmpresaInformada(empresaId?: string): asserts empresaId is string {
+    if (!empresaId) {
+      throw new UnauthorizedException('Empresa do usuario nao informada.');
+    }
   }
 
   private normalizarUrlArquivo(urlArquivo: string) {

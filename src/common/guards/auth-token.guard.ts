@@ -1,5 +1,7 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { AuthService } from '../../auth/auth.service';
+import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 
 interface RequestWithUser {
   headers: {
@@ -18,9 +20,21 @@ interface RequestWithUser {
 
 @Injectable()
 export class AuthTokenGuard implements CanActivate {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly reflector: Reflector,
+  ) {}
 
   canActivate(context: ExecutionContext): boolean {
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    if (isPublic) {
+      return true;
+    }
+
     const request = context.switchToHttp().getRequest<RequestWithUser>();
     const authorization = request.headers.authorization;
 

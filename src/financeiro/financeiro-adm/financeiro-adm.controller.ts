@@ -28,6 +28,7 @@ import { FecharMesFinanceiroDto } from './dto/fechar-mes-financeiro.dto';
 import { ListAnexosFinanceirosQueryDto } from './dto/list-anexos-financeiros-query.dto';
 import { ReabrirMesFinanceiroDto } from './dto/reabrir-mes-financeiro.dto';
 import { RelatorioMensalFinanceiroQueryDto } from './dto/relatorio-mensal-financeiro-query.dto';
+import { fileFilterSeguro } from '../../common/uploads/upload-security';
 
 mkdirSync('./uploads/financeiro-provas', { recursive: true });
 
@@ -38,6 +39,16 @@ const anexoFinanceiroStorage = diskStorage({
     callback(null, `prova-financeira-${suffix}${extname(file.originalname)}`);
   },
 });
+
+const ANEXO_FINANCEIRO_MIME_TYPES = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel',
+  'text/csv',
+]);
 
 @Controller('financeiro-adm')
 @UseGuards(AuthTokenGuard, PermissionGuard)
@@ -108,7 +119,11 @@ export class FinanceiroAdmController {
 
   @Post('anexos/upload')
   @RequireEvento(EVENTOS_NEGOCIO.ANEXO_FINANCEIRO_GERENCIAR)
-  @UseInterceptors(FileInterceptor('arquivo', { storage: anexoFinanceiroStorage, limits: { fileSize: 15 * 1024 * 1024 } }))
+  @UseInterceptors(FileInterceptor('arquivo', {
+    storage: anexoFinanceiroStorage,
+    fileFilter: fileFilterSeguro(ANEXO_FINANCEIRO_MIME_TYPES, 'O anexo financeiro'),
+    limits: { fileSize: 15 * 1024 * 1024 },
+  }))
   uploadAnexo(@UploadedFile() file: any, @Body() body: CreateAnexoFinanceiroDto, @CurrentUser() user?: CurrentUserPayload) {
     return this.financeiroAdmService.createAnexo(body, file, user?.id, user?.empresaId);
   }

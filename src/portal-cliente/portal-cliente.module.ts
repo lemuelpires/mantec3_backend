@@ -16,6 +16,7 @@ import { ItensOrcamento, ItensOrcamentoSchema } from '../orcamentos/schemas/iten
 import { OrdemServico, OrdemServicoSchema } from '../ordens-servico/schemas/ordem-servico.schema';
 import { PortalClienteController } from './portal-cliente.controller';
 import { PortalClienteService } from './portal-cliente.service';
+import { PortalClienteSessao, PortalClienteSessaoSchema } from './schemas/portal-cliente-sessao.schema';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { PortalClienteService } from './portal-cliente.service';
       { name: Produto.name, schema: ProdutoSchema },
       { name: Servico.name, schema: ServicoSchema },
       { name: LogEvento.name, schema: LogEventoSchema },
+      { name: PortalClienteSessao.name, schema: PortalClienteSessaoSchema },
     ]),
   ],
   controllers: [PortalClienteController],

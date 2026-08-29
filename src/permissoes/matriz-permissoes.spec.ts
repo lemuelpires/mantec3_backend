@@ -1,4 +1,11 @@
-import { EVENTOS_NEGOCIO, listarEventosPermitidos, perfilPodeExecutarEvento } from './matriz-permissoes';
+import {
+  EVENTOS_NEGOCIO,
+  PERMISSOES_INTERFACE,
+  listarEventosPermitidos,
+  listarPermissoesInterfacePermitidas,
+  perfilPodeExecutarEvento,
+  serializarMatrizPermissoes,
+} from './matriz-permissoes';
 
 describe('matriz de permissoes por evento', () => {
   it('permite administrador executar qualquer evento critico', () => {
@@ -66,5 +73,23 @@ describe('matriz de permissoes por evento', () => {
   it('nega perfil desconhecido', () => {
     expect(perfilPodeExecutarEvento('visitante', EVENTOS_NEGOCIO.ORCAMENTO_CRIAR)).toBe(false);
     expect(listarEventosPermitidos('visitante')).toEqual([]);
+  });
+
+  it('deriva permissoes de interface a partir dos eventos do backend', () => {
+    expect(listarPermissoesInterfacePermitidas('financeiro')).toEqual(
+      expect.arrayContaining([
+        PERMISSOES_INTERFACE.MANAGE_FINANCEIRO,
+        PERMISSOES_INTERFACE.MANAGE_VENDAS,
+        PERMISSOES_INTERFACE.MANAGE_COMPRAS,
+      ]),
+    );
+    expect(listarPermissoesInterfacePermitidas('tecnico')).not.toContain(PERMISSOES_INTERFACE.MANAGE_FINANCEIRO);
+  });
+
+  it('serializa a matriz para consumo do frontend', () => {
+    const matriz = serializarMatrizPermissoes().matriz;
+
+    expect(matriz.administrador.eventos).toContain(EVENTOS_NEGOCIO.OS_FINALIZAR);
+    expect(matriz.garantias.permissoesInterface).toContain(PERMISSOES_INTERFACE.MANAGE_GARANTIAS);
   });
 });

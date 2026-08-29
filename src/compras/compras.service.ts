@@ -15,6 +15,7 @@ import { MOVIMENTO_ESTOQUE_ORIGEM, MOVIMENTO_ESTOQUE_TIPO } from '../estoque/mov
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { AUDITORIA_ENTIDADES, AUDITORIA_EVENTOS } from '../auditoria/auditoria-eventos';
 import { FinanceiroAdmService } from '../financeiro/financeiro-adm/financeiro-adm.service';
+import { centavosParaDecimal128, dinheiroParaCentavos } from '../financeiro/financeiro-adm/financeiro-adm.types';
 
 const PEDIDO_COMPRA_STATUS_RECEBIDO = 'recebido';
 
@@ -31,7 +32,6 @@ export class ComprasService {
 
   // Fornecedor CRUD
   async createFornecedor(createFornecedorDto: CreateFornecedorDto, actorId?: string, actorEmpresaId?: string) {
-    console.log('CreateFornecedor DTO recebido:', createFornecedorDto);
     this.assertEmpresaPermitida(createFornecedorDto.empresaId, actorEmpresaId);
 
     const normalizedCnpj = createFornecedorDto.cnpj.replace(/\D/g, '');
@@ -57,8 +57,6 @@ export class ComprasService {
 
       return fornecedor;
     } catch (err: any) {
-      console.error('Erro Mongo:', err);
-
       if (err?.code === 11000) {
         throw new BadRequestException('Fornecedor com este CNPJ já existe');
       }
@@ -69,7 +67,7 @@ export class ComprasService {
   }
 
   findAllFornecedores(empresaId?: string) {
-    return this.fornecedorModel.find(this.getEmpresaQuery(empresaId)).exec();
+    return this.fornecedorModel.find(this.getEmpresaQuery(empresaId, { ativo: { $ne: false } })).exec();
   }
 
   findOneFornecedor(id: string, empresaId?: string) {
@@ -95,7 +93,9 @@ export class ComprasService {
   }
 
   async removeFornecedor(id: string, actorId?: string, actorEmpresaId?: string) {
-    const fornecedor = await this.fornecedorModel.findOneAndDelete(this.getEmpresaQuery(actorEmpresaId, { _id: id })).exec();
+    const fornecedor = await this.fornecedorModel
+      .findOneAndUpdate(this.getEmpresaQuery(actorEmpresaId, { _id: id }), { ativo: false }, { new: true })
+      .exec();
 
     if (actorId && fornecedor) {
       await this.registrarAuditoriaFornecedor(fornecedor, actorId, 'removido');
@@ -107,27 +107,16 @@ export class ComprasService {
   // PedidosCompra CRUD
   async createPedidoCompra(createPedidoCompraDto: CreatePedidoCompraDto, actorId?: string, actorEmpresaId?: string) {
     try {
-      console.log(
-        'DTO recebido:\n',
-        JSON.stringify(createPedidoCompraDto, null, 2),
-      );
-
       const { itens = [], ...pedidoDto } = createPedidoCompraDto;
       this.assertEmpresaPermitida(pedidoDto.empresaId, actorEmpresaId);
       await this.assertFornecedorPertenceEmpresa(pedidoDto.fornecedorId, actorEmpresaId);
 
-      console.log('Itens recebidos:', itens);
-
       // Cria o pedido
       const pedido = await this.pedidosCompraModel.create(pedidoDto);
-
-      console.log('Pedido criado:', pedido._id);
 
       // Salva os itens
       if (Array.isArray(itens) && itens.length > 0) {
         for (const item of itens) {
-          console.log('Salvando item:', item);
-
           await this.createItensPedidoCompra({
             pedidoCompraId: pedido._id.toString(),
             produtoId: String(item.produtoId),
@@ -135,8 +124,6 @@ export class ComprasService {
             valorUnitario: String(item.valorUnitario),
           }, actorId, actorEmpresaId, false);
         }
-      } else {
-        console.warn('Nenhum item recebido para este pedido.');
       }
 
       await this.sincronizarEntradaEstoquePedido(pedido._id.toString(), pedidoDto.status);
@@ -150,7 +137,6 @@ export class ComprasService {
       // Retorna o pedido completo com itens
       return await this.findOnePedidoCompra(pedido._id.toString(), actorEmpresaId);
     } catch (error) {
-      console.error('Erro ao criar pedido de compra:', error);
       throw error;
     }
   }
@@ -241,7 +227,6 @@ export class ComprasService {
 
       return await this.findOnePedidoCompra(id, actorEmpresaId);
     } catch (error) {
-      console.error('Erro ao atualizar pedido de compra:', error);
       throw error;
     }
   }
@@ -261,7 +246,9 @@ export class ComprasService {
     );
 
     await this.removerEntradasEstoquePedido(id);
-    const removed = await this.pedidosCompraModel.findOneAndDelete(this.getEmpresaQuery(actorEmpresaId, { _id: id })).exec();
+    const removed = await this.pedidosCompraModel
+      .findOneAndUpdate(this.getEmpresaQuery(actorEmpresaId, { _id: id }), { status: 'cancelado' }, { new: true })
+      .exec();
 
     if (actorId && pedido) {
       await this.registrarAuditoriaPedidoCompra(pedido, actorId, 'removido');
@@ -287,11 +274,9 @@ export class ComprasService {
         createItensPedidoCompraDto.valorUnitario !== ''
       ) {
         try {
-          const precoStr = String(createItensPedidoCompraDto.valorUnitario).replace(',', '.');
-          if (!/^-?\d+(\.\d+)?$/.test(precoStr)) {
-            throw new Error('Formato inválido para valorUnitario');
-          }
-          itemData.valorUnitario = Types.Decimal128.fromString(precoStr);
+          itemData.valorUnitario = centavosParaDecimal128(
+            this.parseValorPositivoCentavos(createItensPedidoCompraDto.valorUnitario, 'valorUnitario'),
+          );
         } catch (err) {
           throw new BadRequestException('valorUnitario inválido');
         }
@@ -309,7 +294,6 @@ export class ComprasService {
 
       return saved;
     } catch (error) {
-      console.error('Erro ao criar item do pedido de compra:', error);
       throw error;
     }
   }
@@ -356,7 +340,9 @@ export class ComprasService {
 
     const updateData: any = { ...updateItensPedidoCompraDto };
     if (updateItensPedidoCompraDto.valorUnitario) {
-      updateData.valorUnitario = Types.Decimal128.fromString(updateItensPedidoCompraDto.valorUnitario);
+      updateData.valorUnitario = centavosParaDecimal128(
+        this.parseValorPositivoCentavos(updateItensPedidoCompraDto.valorUnitario, 'valorUnitario'),
+      );
     }
     const item = await this.itensPedidoCompraModel.findByIdAndUpdate(id, updateData, { new: true }).exec();
 
@@ -513,6 +499,15 @@ export class ComprasService {
       const decimalValue = item.valorUnitario?.$numberDecimal ?? item.valorUnitario?.toString?.() ?? '0';
       return sum + Number(decimalValue) * Number(item.quantidade ?? 0);
     }, 0);
+  }
+
+  private parseValorPositivoCentavos(value: unknown, campo: string) {
+    const centavos = dinheiroParaCentavos(value);
+    if (!Number.isFinite(centavos) || centavos < 0) {
+      throw new BadRequestException(`${campo} invalido`);
+    }
+
+    return centavos;
   }
 
   private async registrarAuditoriaFornecedor(

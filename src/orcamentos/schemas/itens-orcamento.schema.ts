@@ -25,3 +25,5 @@ export class ItensOrcamento {
 }
 
 export const ItensOrcamentoSchema = SchemaFactory.createForClass(ItensOrcamento);
+
+ItensOrcamentoSchema.index({ orcamentoId: 1 });

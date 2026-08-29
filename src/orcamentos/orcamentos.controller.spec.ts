@@ -5,6 +5,8 @@ import { OrcamentosController } from './orcamentos.controller';
 import { ORCAMENTO_STATUS } from './state/orcamento.states';
 
 describe('OrcamentosController', () => {
+  const user = { id: 'user-1', _id: 'user-1', sub: 'user-1', nome: 'User', email: 'u@test.com', empresaId: 'emp-1' };
+
   const createController = () => {
     const service = {
       update: jest.fn(),
@@ -20,39 +22,37 @@ describe('OrcamentosController', () => {
   it('envia orcamento usando status explicito', () => {
     const { controller, service } = createController();
 
-    controller.enviar('orc-1');
+    controller.enviar('orc-1', user);
 
-    expect(service.update).toHaveBeenCalledWith('orc-1', { status: ORCAMENTO_STATUS.ENVIADO });
+    expect(service.update).toHaveBeenCalledWith('orc-1', { status: ORCAMENTO_STATUS.ENVIADO }, 'emp-1');
   });
 
   it('aprova orcamento usando status explicito', () => {
     const { controller, service } = createController();
 
-    controller.aprovar('orc-1');
+    controller.aprovar('orc-1', user);
 
-    expect(service.update).toHaveBeenCalledWith('orc-1', { status: ORCAMENTO_STATUS.APROVADO });
+    expect(service.update).toHaveBeenCalledWith('orc-1', { status: ORCAMENTO_STATUS.APROVADO }, 'emp-1');
   });
 
   it('reprova orcamento usando status explicito', () => {
     const { controller, service } = createController();
 
-    controller.reprovar('orc-1');
+    controller.reprovar('orc-1', user);
 
-    expect(service.update).toHaveBeenCalledWith('orc-1', { status: ORCAMENTO_STATUS.REPROVADO });
+    expect(service.update).toHaveBeenCalledWith('orc-1', { status: ORCAMENTO_STATUS.REPROVADO }, 'emp-1');
   });
 
   it('cancela orcamento usando status explicito', () => {
     const { controller, service } = createController();
 
-    controller.cancelar('orc-1');
+    controller.cancelar('orc-1', user);
 
-    expect(service.update).toHaveBeenCalledWith('orc-1', { status: ORCAMENTO_STATUS.CANCELADO });
+    expect(service.update).toHaveBeenCalledWith('orc-1', { status: ORCAMENTO_STATUS.CANCELADO }, 'emp-1');
   });
 
   it('gera OS a partir do orcamento aprovado', () => {
     const { controller, service } = createController();
-    const user = { id: 'user-1', _id: 'user-1', sub: 'user-1', nome: 'User', email: 'u@test.com', empresaId: 'emp-1' };
-
     controller.gerarOrdemServico('orc-1', user);
 
     expect(service.gerarOrdemServico).toHaveBeenCalledWith('orc-1', user);

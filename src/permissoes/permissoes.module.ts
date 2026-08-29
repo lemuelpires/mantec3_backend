@@ -6,6 +6,7 @@ import {
   UsuarioPerfilSchema,
 } from './schemas/usuario-perfil.schema';
 import { PerfisService } from './perfis.service';
+import { PermissoesController } from './permissoes.controller';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { PerfisService } from './perfis.service';
       { name: UsuarioPerfil.name, schema: UsuarioPerfilSchema },
     ]),
   ],
+  controllers: [PermissoesController],
   providers: [PerfisService],
   exports: [PerfisService],
 })

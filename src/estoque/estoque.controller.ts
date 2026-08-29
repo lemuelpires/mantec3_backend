@@ -10,6 +10,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { CurrentUserPayload } from '../common/decorators/current-user.decorator';
 
 @Controller('estoque')
+@UseGuards(AuthTokenGuard, PermissionGuard)
 export class EstoqueController {
   constructor(private readonly estoqueService: EstoqueService) {}
 
@@ -17,32 +18,37 @@ export class EstoqueController {
   @UseGuards(AuthTokenGuard, PermissionGuard)
   @RequireEvento(EVENTOS_NEGOCIO.ESTOQUE_AJUSTAR)
   create(@Body() createMovimentoEstoqueDto: CreateMovimentoEstoqueDto, @CurrentUser() user?: CurrentUserPayload) {
-    return this.estoqueService.create(createMovimentoEstoqueDto, user?.id);
+    return this.estoqueService.create(createMovimentoEstoqueDto, user?.id, user?.empresaId);
   }
 
   @Get('movimentos')
-  findAll() {
-    return this.estoqueService.findAll();
+  @RequireEvento(EVENTOS_NEGOCIO.ESTOQUE_CONSULTAR)
+  findAll(@CurrentUser() user?: CurrentUserPayload) {
+    return this.estoqueService.findAll(user?.empresaId);
   }
 
   @Get('movimentos/:id')
-  findOne(@Param('id') id: string) {
-    return this.estoqueService.findOne(id);
+  @RequireEvento(EVENTOS_NEGOCIO.ESTOQUE_CONSULTAR)
+  findOne(@Param('id') id: string, @CurrentUser() user?: CurrentUserPayload) {
+    return this.estoqueService.findOne(id, user?.empresaId);
   }
 
   @Get('saldo/:produtoId')
-  getSaldoProduto(@Param('produtoId') produtoId: string) {
-    return this.estoqueService.getSaldoProduto(produtoId);
+  @RequireEvento(EVENTOS_NEGOCIO.ESTOQUE_CONSULTAR)
+  getSaldoProduto(@Param('produtoId') produtoId: string, @CurrentUser() user?: CurrentUserPayload) {
+    return this.estoqueService.getSaldoProduto(produtoId, user?.empresaId);
   }
 
   @Get('disponibilidade')
-  getDisponibilidadeProdutos() {
-    return this.estoqueService.getDisponibilidadeProdutos();
+  @RequireEvento(EVENTOS_NEGOCIO.ESTOQUE_CONSULTAR)
+  getDisponibilidadeProdutos(@CurrentUser() user?: CurrentUserPayload) {
+    return this.estoqueService.getDisponibilidadeProdutos(user?.empresaId);
   }
 
   @Get('disponibilidade/:produtoId')
-  getDisponibilidadeProduto(@Param('produtoId') produtoId: string) {
-    return this.estoqueService.getDisponibilidadeProduto(produtoId);
+  @RequireEvento(EVENTOS_NEGOCIO.ESTOQUE_CONSULTAR)
+  getDisponibilidadeProduto(@Param('produtoId') produtoId: string, @CurrentUser() user?: CurrentUserPayload) {
+    return this.estoqueService.getDisponibilidadeProduto(produtoId, user?.empresaId);
   }
 
   @Patch('movimentos/:id')
@@ -53,13 +59,13 @@ export class EstoqueController {
     @Body() updateMovimentoEstoqueDto: UpdateMovimentoEstoqueDto,
     @CurrentUser() user?: CurrentUserPayload,
   ) {
-    return this.estoqueService.update(id, updateMovimentoEstoqueDto, user?.id);
+    return this.estoqueService.update(id, updateMovimentoEstoqueDto, user?.id, user?.empresaId);
   }
 
   @Delete('movimentos/:id')
   @UseGuards(AuthTokenGuard, PermissionGuard)
   @RequireEvento(EVENTOS_NEGOCIO.ESTOQUE_ESTORNAR)
   remove(@Param('id') id: string, @CurrentUser() user?: CurrentUserPayload) {
-    return this.estoqueService.remove(id, user?.id);
+    return this.estoqueService.remove(id, user?.id, user?.empresaId);
   }
 }

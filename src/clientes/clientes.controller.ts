@@ -21,22 +21,24 @@ export class ClientesController {
   @ApiOperation({ summary: 'Criar cliente' })
   @ApiResponse({ status: 201, description: 'Cliente criado com sucesso.' })
   create(@Body() createClienteDto: CreateClienteDto, @CurrentUser() user?: CurrentUserPayload) {
-    return this.clientesService.create(createClienteDto, user?.sub);
+    return this.clientesService.create(createClienteDto, user?.sub, user?.empresaId);
   }
 
   @Get()
+  @RequireEvento(EVENTOS_NEGOCIO.CLIENTE_CONSULTAR)
   @ApiOperation({ summary: 'Listar todos os clientes' })
   @ApiResponse({ status: 200, description: 'Lista de clientes.' })
-  findAll() {
-    return this.clientesService.findAll();
+  findAll(@CurrentUser() user?: CurrentUserPayload) {
+    return this.clientesService.findAll(user?.empresaId);
   }
 
   @Get(':id')
+  @RequireEvento(EVENTOS_NEGOCIO.CLIENTE_CONSULTAR)
   @ApiOperation({ summary: 'Buscar cliente por ID' })
   @ApiResponse({ status: 200, description: 'Cliente encontrado.' })
   @ApiResponse({ status: 404, description: 'Cliente nao encontrado.' })
-  findOne(@Param('id') id: string) {
-    return this.clientesService.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser() user?: CurrentUserPayload) {
+    return this.clientesService.findOne(id, user?.empresaId);
   }
 
   @Patch(':id')
@@ -46,7 +48,7 @@ export class ClientesController {
   @ApiResponse({ status: 200, description: 'Cliente atualizado.' })
   @ApiResponse({ status: 404, description: 'Cliente nao encontrado.' })
   update(@Param('id') id: string, @Body() updateClienteDto: UpdateClienteDto, @CurrentUser() user?: CurrentUserPayload) {
-    return this.clientesService.update(id, updateClienteDto, user?.sub);
+    return this.clientesService.update(id, updateClienteDto, user?.sub, user?.empresaId);
   }
 
   @Delete(':id')
@@ -56,6 +58,6 @@ export class ClientesController {
   @ApiResponse({ status: 200, description: 'Cliente removido.' })
   @ApiResponse({ status: 404, description: 'Cliente nao encontrado.' })
   remove(@Param('id') id: string, @CurrentUser() user?: CurrentUserPayload) {
-    return this.clientesService.remove(id, user?.sub);
+    return this.clientesService.remove(id, user?.sub, user?.empresaId);
   }
 }

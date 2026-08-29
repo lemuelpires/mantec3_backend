@@ -1,6 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { RecebimentoEquipamento, RecebimentoEquipamentoDocument } from './recebimento-equipamento.schema';
 import { CreateRecebimentoEquipamentoDto } from './dto/create-recebimento-equipamento.dto';
 import { UpdateRecebimentoEquipamentoDto } from './dto/update-recebimento-equipamento.dto';
@@ -24,33 +24,47 @@ export class RecebimentoEquipamentoService {
   ) {}
 
   async create(createRecebimentoEquipamentoDto: CreateRecebimentoEquipamentoDto, user?: CurrentUserPayload) {
-    const createdRecebimentoEquipamento = new this.recebimentoEquipamentoModel(createRecebimentoEquipamentoDto);
+    const payload = {
+      ...createRecebimentoEquipamentoDto,
+      empresaId: user?.empresaId ?? createRecebimentoEquipamentoDto.empresaId,
+      recebidoPor: user?.id ?? createRecebimentoEquipamentoDto.recebidoPor,
+    };
+
+    this.assertEmpresaInformada(String(payload.empresaId || ''));
+
+    if (user?.empresaId && createRecebimentoEquipamentoDto.empresaId && String(createRecebimentoEquipamentoDto.empresaId) !== user.empresaId) {
+      throw new BadRequestException('Recebimento nao pode ser vinculado a outra empresa.');
+    }
+
+    const createdRecebimentoEquipamento = new this.recebimentoEquipamentoModel(payload);
     const saved = await createdRecebimentoEquipamento.save();
 
     await this.registrarAuditoriaRecebimento(saved, user, AUDITORIA_EVENTOS.RECEBIMENTO_CRIADO, {
       operacao: 'criado',
-      clienteId: createRecebimentoEquipamentoDto.clienteId,
-      tipoEquipamento: createRecebimentoEquipamentoDto.tipoEquipamento,
-      marca: createRecebimentoEquipamentoDto.marca,
-      modelo: createRecebimentoEquipamentoDto.modelo,
-      status: createRecebimentoEquipamentoDto.status,
+      clienteId: payload.clienteId,
+      tipoEquipamento: payload.tipoEquipamento,
+      marca: payload.marca,
+      modelo: payload.modelo,
+      status: payload.status,
     });
 
     return saved;
   }
 
-  findAll() {
+  findAll(empresaId?: string) {
+    this.assertEmpresaInformada(empresaId);
     return this.recebimentoEquipamentoModel
-      .find()
+      .find(this.getEmpresaQuery(empresaId))
       .populate('empresaId', 'nomeFantasia razaoSocial')
       .populate('clienteId', 'nome cpfCnpj')
       .populate('recebidoPor', 'nome email')
       .exec();
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, empresaId?: string) {
+    this.assertEmpresaInformada(empresaId);
     const recebimento = await this.recebimentoEquipamentoModel
-      .findById(id)
+      .findOne(this.getEmpresaQuery(empresaId, { _id: id }))
       .populate('empresaId', 'nomeFantasia razaoSocial')
       .populate('clienteId', 'nome cpfCnpj')
       .populate('recebidoPor', 'nome email')
@@ -76,7 +90,17 @@ export class RecebimentoEquipamentoService {
   }
 
   async update(id: string, updateRecebimentoEquipamentoDto: UpdateRecebimentoEquipamentoDto, user?: CurrentUserPayload) {
-    const updated = await this.recebimentoEquipamentoModel.findByIdAndUpdate(id, updateRecebimentoEquipamentoDto, { new: true }).exec();
+    this.assertEmpresaInformada(user?.empresaId);
+    if (user?.empresaId && updateRecebimentoEquipamentoDto.empresaId && String(updateRecebimentoEquipamentoDto.empresaId) !== user.empresaId) {
+      throw new BadRequestException('Recebimento nao pode ser movido para outra empresa.');
+    }
+
+    const updatePayload = { ...updateRecebimentoEquipamentoDto };
+    delete updatePayload.empresaId;
+
+    const updated = await this.recebimentoEquipamentoModel
+      .findOneAndUpdate(this.getEmpresaQuery(user?.empresaId, { _id: id }), updatePayload, { new: true })
+      .exec();
 
     if (updated) {
       await this.registrarAuditoriaRecebimento(updated, user, AUDITORIA_EVENTOS.RECEBIMENTO_ATUALIZADO, {
@@ -89,8 +113,9 @@ export class RecebimentoEquipamentoService {
     return updated;
   }
 
-  remove(id: string) {
-    return this.recebimentoEquipamentoModel.findByIdAndDelete(id).exec();
+  remove(id: string, empresaId?: string) {
+    this.assertEmpresaInformada(empresaId);
+    return this.recebimentoEquipamentoModel.findOneAndDelete(this.getEmpresaQuery(empresaId, { _id: id })).exec();
   }
 
   private async registrarAuditoriaRecebimento(
@@ -115,5 +140,16 @@ export class RecebimentoEquipamentoService {
         clienteId: recebimento.clienteId?.toString(),
       },
     });
+  }
+
+  private getEmpresaQuery(empresaId?: string, base: Record<string, unknown> = {}) {
+    this.assertEmpresaInformada(empresaId);
+    return { ...base, empresaId: new Types.ObjectId(empresaId) };
+  }
+
+  private assertEmpresaInformada(empresaId?: string): asserts empresaId is string {
+    if (!empresaId) {
+      throw new UnauthorizedException('Empresa do usuario nao informada.');
+    }
   }
 }

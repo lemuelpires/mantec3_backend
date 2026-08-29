@@ -36,6 +36,7 @@ describe('GarantiasController', () => {
       'gar-1',
       { status: GARANTIA_STATUS.ENVIADA_FORNECEDOR },
       'user-1',
+      'empresa-1',
     );
   });
 
@@ -44,7 +45,7 @@ describe('GarantiasController', () => {
 
     controller.iniciarAnalise('gar-1', user);
 
-    expect(service.updateGarantia).toHaveBeenCalledWith('gar-1', { status: GARANTIA_STATUS.EM_ANALISE }, 'user-1');
+    expect(service.updateGarantia).toHaveBeenCalledWith('gar-1', { status: GARANTIA_STATUS.EM_ANALISE }, 'user-1', 'empresa-1');
   });
 
   it('aprova garantia usando status explicito', () => {
@@ -52,7 +53,7 @@ describe('GarantiasController', () => {
 
     controller.aprovar('gar-1', user);
 
-    expect(service.updateGarantia).toHaveBeenCalledWith('gar-1', { status: GARANTIA_STATUS.APROVADA }, 'user-1');
+    expect(service.updateGarantia).toHaveBeenCalledWith('gar-1', { status: GARANTIA_STATUS.APROVADA }, 'user-1', 'empresa-1');
   });
 
   it('recusa garantia usando status explicito', () => {
@@ -60,7 +61,7 @@ describe('GarantiasController', () => {
 
     controller.recusar('gar-1', user);
 
-    expect(service.updateGarantia).toHaveBeenCalledWith('gar-1', { status: GARANTIA_STATUS.RECUSADA }, 'user-1');
+    expect(service.updateGarantia).toHaveBeenCalledWith('gar-1', { status: GARANTIA_STATUS.RECUSADA }, 'user-1', 'empresa-1');
   });
 
   it('finaliza garantia usando status explicito', () => {
@@ -68,6 +69,6 @@ describe('GarantiasController', () => {
 
     controller.finalizar('gar-1', user);
 
-    expect(service.updateGarantia).toHaveBeenCalledWith('gar-1', { status: GARANTIA_STATUS.CONCLUIDA }, 'user-1');
+    expect(service.updateGarantia).toHaveBeenCalledWith('gar-1', { status: GARANTIA_STATUS.CONCLUIDA }, 'user-1', 'empresa-1');
   });
 });

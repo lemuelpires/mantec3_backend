@@ -1,16 +1,37 @@
 import { ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { join } from 'path';
 import { AppModule } from './app.module';
+import {
+  configureRequestId,
+  configureSecurityHeaders,
+  configureTrustProxy,
+  getCorsOrigins,
+  isSwaggerEnabled,
+  validateSecurityConfig,
+} from './config/security.config';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const configService = app.get(ConfigService);
 
-  // CORS
+  validateSecurityConfig(configService);
+  configureTrustProxy(app, configService);
+  configureRequestId(app);
+  configureSecurityHeaders(app);
+
+  const allowedOrigins = getCorsOrigins(configService);
   app.enableCors({
-    origin: true,
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error('Origem nao permitida pelo CORS.'), false);
+    },
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
     allowedHeaders: [
@@ -19,90 +40,35 @@ async function bootstrap() {
       'Content-Type',
       'Accept',
       'Authorization',
+      'X-Request-Id',
     ],
-    exposedHeaders: ['Authorization'],
+    exposedHeaders: ['Authorization', 'X-Request-Id'],
     optionsSuccessStatus: 204,
   });
 
-  // Validação global
   app.useGlobalPipes(
     new ValidationPipe({
       transform: true,
       whitelist: true,
-      forbidNonWhitelisted: false,
+      forbidNonWhitelisted: configService.get<string>('VALIDATION_FORBID_NON_WHITELISTED') === 'true',
     }),
   );
 
-  // Arquivos estáticos
-  app.useStaticAssets(join(process.cwd(), 'uploads'), {
-    prefix: '/uploads/',
-  });
+  if (isSwaggerEnabled(configService)) {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('Mantec3 API')
+      .setDescription('API para o sistema Mantec3')
+      .setVersion('1.0')
+      .build();
 
-  // Swagger
-  const config = new DocumentBuilder()
-    .setTitle('Mantec3 API')
-    .setDescription('API para o sistema Mantec3')
-    .setVersion('1.0')
-    .build();
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('api', app, document);
+  }
 
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api', app, document);
+  const port = configService.get<number>('PORT') || 3000;
+  await app.listen(port, '0.0.0.0');
 
-  // Inicialização
-  await app.listen(3000, '0.0.0.0');
-
-  console.log(`🚀 API rodando em http://0.0.0.0:3000`);
+  console.log(`API rodando na porta ${port}`);
 }
 
 bootstrap();
-/*
-import { ValidationPipe } from '@nestjs/common';
-import { NestFactory } from '@nestjs/core';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { AppModule } from './app.module';
-
-async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-    }),
-  );
-
-  // Configuração Swagger
-  const config = new DocumentBuilder()
-    .setTitle('Mantec3 API')
-    .setDescription('API para o sistema Mantec3')
-    .setVersion('1.0')
-    .build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api', app, document);
-
-  // --- Endpoint para listar todas as rotas ---
-  app.getHttpAdapter().getInstance().get('/__rotas', (_, res) => {
-    try {
-      const server = app.getHttpAdapter().getInstance();
-      const rotas: string[] = [];
-
-      if (server._router && server._router.stack) {
-        server._router.stack.forEach((r: any) => {
-          if (r.route && r.route.path) {
-            rotas.push(r.route.path);
-          }
-        });
-      }
-
-      res.json(rotas);
-    } catch (err) {
-      console.error('Erro ao listar rotas:', err);
-      res.status(500).json({ error: 'Erro ao listar rotas' });
-    }
-  });
-  // --------------------------------------------
-
-  await app.listen(3000);
-}
-bootstrap();*/

@@ -25,3 +25,6 @@ export class MovimentosEstoque {
 }
 
 export const MovimentosEstoqueSchema = SchemaFactory.createForClass(MovimentosEstoque);
+
+MovimentosEstoqueSchema.index({ empresaId: 1, produtoId: 1, criadoEm: -1 });
+MovimentosEstoqueSchema.index({ empresaId: 1, origemTipo: 1, origemId: 1 });

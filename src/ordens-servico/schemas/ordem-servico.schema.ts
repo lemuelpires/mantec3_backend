@@ -58,3 +58,8 @@ export class OrdemServico {
 }
 
 export const OrdemServicoSchema = SchemaFactory.createForClass(OrdemServico);
+
+OrdemServicoSchema.index({ empresaId: 1, statusOperacional: 1, criadoEm: -1 });
+OrdemServicoSchema.index({ empresaId: 1, clienteId: 1, criadoEm: -1 });
+OrdemServicoSchema.index({ empresaId: 1, orcamentoId: 1 });
+OrdemServicoSchema.index({ empresaId: 1, recebimentoEquipamentoId: 1 });

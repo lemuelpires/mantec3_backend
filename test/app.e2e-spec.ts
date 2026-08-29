@@ -1,4 +1,5 @@
 import { INestApplication } from '@nestjs/common';
+import { getConnectionToken } from '@nestjs/mongoose';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types';
@@ -11,6 +12,12 @@ describe('AppController (e2e)', () => {
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       controllers: [AppController],
+      providers: [
+        {
+          provide: getConnectionToken(),
+          useValue: { readyState: 1 },
+        },
+      ],
     })
       .overrideGuard(FirebaseAuthGuard)
       .useValue({

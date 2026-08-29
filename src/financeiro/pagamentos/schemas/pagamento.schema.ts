@@ -28,3 +28,7 @@ export class Pagamento {
 }
 
 export const PagamentoSchema = SchemaFactory.createForClass(Pagamento);
+
+PagamentoSchema.index({ vendaId: 1, dataPagamento: -1 });
+PagamentoSchema.index({ tituloFinanceiroId: 1 });
+PagamentoSchema.index({ movimentoCaixaId: 1 });

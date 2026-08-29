@@ -26,3 +26,6 @@ export class PedidosCompra {
 }
 
 export const PedidosCompraSchema = SchemaFactory.createForClass(PedidosCompra);
+
+PedidosCompraSchema.index({ empresaId: 1, status: 1, criadoEm: -1 });
+PedidosCompraSchema.index({ empresaId: 1, fornecedorId: 1, criadoEm: -1 });

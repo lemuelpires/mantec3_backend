@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { createHash } from 'crypto';
 import { Model, Types } from 'mongoose';
@@ -32,23 +32,27 @@ export class OsService {
     private readonly estoqueService: EstoqueService,
   ) { }
 
-  async create(createOrdemServicoDto: CreateOrdemServicoDto) {
+  async create(createOrdemServicoDto: CreateOrdemServicoDto, empresaId?: string) {
+    const scopedEmpresaId = this.getEmpresaIdPermitida(createOrdemServicoDto.empresaId, empresaId);
     if (!isOsStatus(createOrdemServicoDto.statusOperacional)) {
       throw new BadRequestException(`Status de OS invalido: ${createOrdemServicoDto.statusOperacional}`);
     }
 
     if (createOrdemServicoDto.orcamentoId) {
-      const existente = await this.findByOrcamento(createOrdemServicoDto.orcamentoId);
+      const existente = await this.findByOrcamento(createOrdemServicoDto.orcamentoId, scopedEmpresaId);
       if (existente) {
         return existente;
       }
     }
 
-    const createdOrdemServico = new this.ordemServicoModel(createOrdemServicoDto);
+    const createdOrdemServico = new this.ordemServicoModel({
+      ...createOrdemServicoDto,
+      empresaId: scopedEmpresaId,
+    });
     const saved = await createdOrdemServico.save();
 
     await this.auditoriaService.registrarEventoNegocio({
-      empresaId: createOrdemServicoDto.empresaId,
+      empresaId: scopedEmpresaId,
       usuarioId: createOrdemServicoDto.tecnicoId,
       tipoEvento: AUDITORIA_EVENTOS.OS_CRIADA,
       entidade: AUDITORIA_ENTIDADES.ORDEM_SERVICO,
@@ -63,9 +67,10 @@ export class OsService {
     return saved;
   }
 
-  findAll() {
+  findAll(empresaId?: string) {
+    this.assertEmpresaInformada(empresaId);
     return this.ordemServicoModel
-      .find()
+      .find({ empresaId })
       .populate('empresaId', 'nomeFantasia razaoSocial')
       .populate('clienteId', 'nome cpfCnpj')
       .populate('tecnicoId', 'nome email perfil')
@@ -74,9 +79,10 @@ export class OsService {
       .exec();
   }
 
-  findOne(id: string) {
+  findOne(id: string, empresaId?: string) {
+    this.assertEmpresaInformada(empresaId);
     return this.ordemServicoModel
-      .findById(id)
+      .findOne({ _id: id, empresaId })
       .populate('empresaId', 'nomeFantasia razaoSocial')
       .populate('clienteId', 'nome cpfCnpj')
       .populate('tecnicoId', 'nome email perfil')
@@ -85,9 +91,10 @@ export class OsService {
       .exec();
   }
 
-  findByOrcamento(orcamentoId: string) {
+  findByOrcamento(orcamentoId: string, empresaId?: string) {
+    const query = empresaId ? { orcamentoId, empresaId } : { orcamentoId };
     return this.ordemServicoModel
-      .findOne({ orcamentoId })
+      .findOne(query)
       .populate('empresaId', 'nomeFantasia razaoSocial')
       .populate('clienteId', 'nome cpfCnpj')
       .populate('tecnicoId', 'nome email perfil')
@@ -96,8 +103,9 @@ export class OsService {
       .exec();
   }
 
-  async update(id: string, updateOrdemServicoDto: UpdateOrdemServicoDto) {
-    const ordemServico = await this.ordemServicoModel.findById(id).exec();
+  async update(id: string, updateOrdemServicoDto: UpdateOrdemServicoDto, empresaId?: string) {
+    this.assertEmpresaInformada(empresaId);
+    const ordemServico = await this.ordemServicoModel.findOne({ _id: id, empresaId }).exec();
     if (!ordemServico) {
       throw new NotFoundException('Ordem de servico nao encontrada.');
     }
@@ -113,7 +121,9 @@ export class OsService {
       assertCanEditOs(ordemServico.statusOperacional);
     }
 
-    const updated = await this.ordemServicoModel.findByIdAndUpdate(id, updateOrdemServicoDto, { new: true }).exec();
+    const updated = await this.ordemServicoModel
+      .findOneAndUpdate({ _id: id, empresaId }, { ...updateOrdemServicoDto, empresaId }, { new: true })
+      .exec();
 
     if (nextStatus && nextStatus !== ordemServico.statusOperacional) {
       await this.auditoriaService.registrarEventoNegocio({
@@ -132,18 +142,20 @@ export class OsService {
     return updated;
   }
 
-  async remove(id: string) {
-    const ordemServico = await this.ordemServicoModel.findById(id).exec();
+  async remove(id: string, empresaId?: string) {
+    this.assertEmpresaInformada(empresaId);
+    const ordemServico = await this.ordemServicoModel.findOne({ _id: id, empresaId }).exec();
     if (!ordemServico) {
       throw new NotFoundException('Ordem de servico nao encontrada.');
     }
 
     assertCanEditOs(ordemServico.statusOperacional);
-    return this.ordemServicoModel.findByIdAndDelete(id).exec();
+    return this.ordemServicoModel.findOneAndUpdate({ _id: id, empresaId }, { statusOperacional: OS_STATUS.CANCELADA }, { new: true }).exec();
   }
 
   async registrarEntrega(id: string, dto: RegistrarEntregaOsDto, user?: CurrentUserPayload) {
-    const ordemServico = await this.ordemServicoModel.findById(id).exec();
+    this.assertEmpresaInformada(user?.empresaId);
+    const ordemServico = await this.ordemServicoModel.findOne({ _id: id, empresaId: user?.empresaId }).exec();
     if (!ordemServico) {
       throw new NotFoundException('Ordem de servico nao encontrada.');
     }
@@ -153,7 +165,7 @@ export class OsService {
     }
 
     const venda = await this.vendaModel
-      .findOne({ origemTipo: 'ordem_servico', origemId: new Types.ObjectId(id) })
+      .findOne({ origemTipo: 'ordem_servico', origemId: new Types.ObjectId(id), empresaId: user?.empresaId })
       .exec();
 
     if (!venda) {
@@ -168,8 +180,8 @@ export class OsService {
       .update(dto.assinaturaImagemBase64, 'utf8')
       .digest('hex');
 
-    const updated = await this.ordemServicoModel.findByIdAndUpdate(
-      id,
+    const updated = await this.ordemServicoModel.findOneAndUpdate(
+      { _id: id, empresaId: user?.empresaId },
       {
         dataEntrega: new Date(),
         entregueParaNome: dto.entregueParaNome,
@@ -202,18 +214,23 @@ export class OsService {
     return updated;
   }
 
-  async createItem(createItensUtilizadosOSDto: CreateItensUtilizadosOSDto, options: { skipSaldoCheck?: boolean } = {}) {
-    await this.assertOsCanConsumeItem(createItensUtilizadosOSDto.ordemServicoId);
+  async createItem(
+    createItensUtilizadosOSDto: CreateItensUtilizadosOSDto,
+    options: { skipSaldoCheck?: boolean } = {},
+    empresaId?: string,
+  ) {
+    const ordemServico = await this.assertOsCanConsumeItem(createItensUtilizadosOSDto.ordemServicoId, empresaId);
     if (!options.skipSaldoCheck) {
       await this.estoqueService.assertSaldoDisponivel(
         createItensUtilizadosOSDto.produtoId,
         createItensUtilizadosOSDto.quantidade,
+        0,
+        ordemServico.empresaId.toString(),
       );
     }
 
     const createdItem = new this.itensUtilizadosOSModel(createItensUtilizadosOSDto);
     const saved = await createdItem.save();
-    const ordemServico = await this.ordemServicoModel.findById(createItensUtilizadosOSDto.ordemServicoId).exec();
 
     if (ordemServico) {
       await this.registrarMovimentoEstoqueOs({
@@ -240,11 +257,13 @@ export class OsService {
     return saved;
   }
 
-  async reservarPeca(createPecaReservadaOSDto: CreatePecaReservadaOSDto) {
-    const ordemServico = await this.assertOsCanReserveItem(createPecaReservadaOSDto.ordemServicoId);
+  async reservarPeca(createPecaReservadaOSDto: CreatePecaReservadaOSDto, empresaId?: string) {
+    const ordemServico = await this.assertOsCanReserveItem(createPecaReservadaOSDto.ordemServicoId, empresaId);
     await this.estoqueService.assertSaldoDisponivel(
       createPecaReservadaOSDto.produtoId,
       createPecaReservadaOSDto.quantidade,
+      0,
+      ordemServico.empresaId.toString(),
     );
     const createdReserva = new this.pecasReservadasOSModel(createPecaReservadaOSDto);
     const saved = await createdReserva.save();
@@ -272,28 +291,30 @@ export class OsService {
     return saved;
   }
 
-  findReservasByOs(ordemServicoId: string) {
+  async findReservasByOs(ordemServicoId: string, empresaId?: string) {
+    await this.assertOsDaEmpresa(ordemServicoId, empresaId);
     return this.pecasReservadasOSModel
       .find({ ordemServicoId })
       .populate('produtoId', 'nome codigoInterno precoVenda')
       .exec();
   }
 
-  findReservasPendentes() {
+  async findReservasPendentes(empresaId?: string) {
+    const ordemServicoIds = await this.getOrdemServicoIdsDaEmpresa(empresaId);
     return this.pecasReservadasOSModel
-      .find()
+      .find({ ordemServicoId: { $in: ordemServicoIds } })
       .populate('produtoId', 'nome codigoInterno precoVenda')
       .populate('ordemServicoId', 'statusOperacional prioridade dataEntrada clienteId')
       .exec();
   }
 
-  async consumirReserva(reservaId: string) {
+  async consumirReserva(reservaId: string, empresaId?: string) {
     const reserva = await this.pecasReservadasOSModel.findById(reservaId).exec();
     if (!reserva) {
       throw new NotFoundException('Reserva de peca da OS nao encontrada.');
     }
 
-    const ordemServico = await this.assertOsCanConsumeItem(reserva.ordemServicoId.toString());
+    const ordemServico = await this.assertOsCanConsumeItem(reserva.ordemServicoId.toString(), empresaId);
 
     await this.registrarMovimentoEstoqueOs({
       ordemServico,
@@ -309,19 +330,20 @@ export class OsService {
         quantidade: reserva.quantidade,
       },
       { skipSaldoCheck: true },
+      ordemServico.empresaId.toString(),
     );
 
     await this.pecasReservadasOSModel.findByIdAndDelete(reservaId).exec();
     return item;
   }
 
-  async removerReserva(reservaId: string) {
+  async removerReserva(reservaId: string, empresaId?: string) {
     const reserva = await this.pecasReservadasOSModel.findById(reservaId).exec();
     if (!reserva) {
       throw new NotFoundException('Reserva de peca da OS nao encontrada.');
     }
 
-    const ordemServico = await this.assertOsCanReserveItem(reserva.ordemServicoId.toString());
+    const ordemServico = await this.assertOsCanReserveItem(reserva.ordemServicoId.toString(), empresaId);
 
     await this.registrarMovimentoEstoqueOs({
       ordemServico,
@@ -333,36 +355,44 @@ export class OsService {
     return this.pecasReservadasOSModel.findByIdAndDelete(reservaId).exec();
   }
 
-  findAllItems() {
-    return this.itensUtilizadosOSModel.find().exec();
+  async findAllItems(empresaId?: string) {
+    const ordemServicoIds = await this.getOrdemServicoIdsDaEmpresa(empresaId);
+    return this.itensUtilizadosOSModel.find({ ordemServicoId: { $in: ordemServicoIds } }).exec();
   }
 
-  findItemsByOs(ordemServicoId: string) {
+  async findItemsByOs(ordemServicoId: string, empresaId?: string) {
+    await this.assertOsDaEmpresa(ordemServicoId, empresaId);
     return this.itensUtilizadosOSModel
       .find({ ordemServicoId })
       .populate('produtoId', 'nome codigoInterno precoVenda')
       .exec();
   }
 
-  findOneItem(id: string) {
-    return this.itensUtilizadosOSModel.findById(id).exec();
+  async findOneItem(id: string, empresaId?: string) {
+    const item = await this.itensUtilizadosOSModel.findById(id).exec();
+    if (!item) {
+      return null;
+    }
+
+    await this.assertOsDaEmpresa(item.ordemServicoId.toString(), empresaId);
+    return item;
   }
 
-  async updateItem(id: string, updateItensUtilizadosOSDto: UpdateItensUtilizadosOSDto) {
+  async updateItem(id: string, updateItensUtilizadosOSDto: UpdateItensUtilizadosOSDto, empresaId?: string) {
     const item = await this.itensUtilizadosOSModel.findById(id).exec();
     if (!item) {
       throw new NotFoundException('Item utilizado na OS nao encontrado.');
     }
 
-    await this.assertOsCanConsumeItem(item.ordemServicoId.toString());
-    const ordemServico = await this.ordemServicoModel.findById(item.ordemServicoId).exec();
+    await this.assertOsCanConsumeItem(item.ordemServicoId.toString(), empresaId);
+    const ordemServico = await this.ordemServicoModel.findOne({ _id: item.ordemServicoId, empresaId }).exec();
     const produtoAnteriorId = item.produtoId.toString();
     const quantidadeAnterior = item.quantidade;
     const produtoAtualId = updateItensUtilizadosOSDto.produtoId ?? produtoAnteriorId;
     const quantidadeAtual = updateItensUtilizadosOSDto.quantidade ?? quantidadeAnterior;
     const saldoAdicional = produtoAtualId === produtoAnteriorId ? quantidadeAnterior : 0;
 
-    await this.estoqueService.assertSaldoDisponivel(produtoAtualId, quantidadeAtual, saldoAdicional);
+    await this.estoqueService.assertSaldoDisponivel(produtoAtualId, quantidadeAtual, saldoAdicional, empresaId);
 
     if (ordemServico) {
       await this.registrarMovimentoEstoqueOs({
@@ -382,14 +412,14 @@ export class OsService {
     return this.itensUtilizadosOSModel.findByIdAndUpdate(id, updateItensUtilizadosOSDto, { new: true }).exec();
   }
 
-  async removeItem(id: string) {
+  async removeItem(id: string, empresaId?: string) {
     const item = await this.itensUtilizadosOSModel.findById(id).exec();
     if (!item) {
       throw new NotFoundException('Item utilizado na OS nao encontrado.');
     }
 
-    await this.assertOsCanConsumeItem(item.ordemServicoId.toString());
-    const ordemServico = await this.ordemServicoModel.findById(item.ordemServicoId).exec();
+    await this.assertOsCanConsumeItem(item.ordemServicoId.toString(), empresaId);
+    const ordemServico = await this.ordemServicoModel.findOne({ _id: item.ordemServicoId, empresaId }).exec();
 
     if (ordemServico) {
       await this.registrarMovimentoEstoqueOs({
@@ -403,8 +433,8 @@ export class OsService {
     return this.itensUtilizadosOSModel.findByIdAndDelete(id).exec();
   }
 
-  private async assertOsCanConsumeItem(ordemServicoId: string) {
-    const ordemServico = await this.ordemServicoModel.findById(ordemServicoId).exec();
+  private async assertOsCanConsumeItem(ordemServicoId: string, empresaId?: string) {
+    const ordemServico = await this.assertOsDaEmpresa(ordemServicoId, empresaId);
     if (!ordemServico) {
       throw new NotFoundException('Ordem de servico nao encontrada.');
     }
@@ -416,11 +446,8 @@ export class OsService {
     return ordemServico;
   }
 
-  private async assertOsCanReserveItem(ordemServicoId: string) {
-    const ordemServico = await this.ordemServicoModel.findById(ordemServicoId).exec();
-    if (!ordemServico) {
-      throw new NotFoundException('Ordem de servico nao encontrada.');
-    }
+  private async assertOsCanReserveItem(ordemServicoId: string, empresaId?: string) {
+    const ordemServico = await this.assertOsDaEmpresa(ordemServicoId, empresaId);
 
     const statusesPermitidosParaReserva: string[] = [
       OS_STATUS.EM_DIAGNOSTICO,
@@ -456,6 +483,44 @@ export class OsService {
         origemId: (ordemServico._id as Types.ObjectId).toString(),
       },
       ordemServico.tecnicoId.toString(),
+      ordemServico.empresaId.toString(),
     );
+  }
+
+  private async assertOsDaEmpresa(ordemServicoId: string, empresaId?: string) {
+    this.assertEmpresaInformada(empresaId);
+    const ordemServico = await this.ordemServicoModel.findOne({ _id: ordemServicoId, empresaId }).exec();
+    if (!ordemServico) {
+      throw new NotFoundException('Ordem de servico nao encontrada.');
+    }
+
+    return ordemServico;
+  }
+
+  private async getOrdemServicoIdsDaEmpresa(empresaId?: string) {
+    this.assertEmpresaInformada(empresaId);
+    const ordens = await this.ordemServicoModel.find({ empresaId }).select('_id').lean().exec();
+    return ordens.map((ordem) => ordem._id);
+  }
+
+  private getEmpresaIdPermitida(inputEmpresaId: unknown, userEmpresaId?: string) {
+    if (userEmpresaId) {
+      if (inputEmpresaId && String(inputEmpresaId) !== String(userEmpresaId)) {
+        throw new UnauthorizedException('Empresa informada nao pertence ao usuario.');
+      }
+      return userEmpresaId;
+    }
+
+    if (!inputEmpresaId) {
+      throw new UnauthorizedException('Empresa da ordem de servico nao informada.');
+    }
+
+    return String(inputEmpresaId);
+  }
+
+  private assertEmpresaInformada(empresaId?: string): asserts empresaId is string {
+    if (!empresaId) {
+      throw new UnauthorizedException('Empresa do usuario nao informada.');
+    }
   }
 }

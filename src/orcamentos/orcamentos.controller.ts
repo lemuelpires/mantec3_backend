@@ -19,82 +19,87 @@ export class OrcamentosController {
   @Post()
   @UseGuards(AuthTokenGuard, PermissionGuard)
   @RequireEvento(EVENTOS_NEGOCIO.ORCAMENTO_CRIAR)
-  create(@Body() createOrcamentoDto: CreateOrcamentoDto) {
-    return this.orcamentosService.create(createOrcamentoDto);
+  create(@Body() createOrcamentoDto: CreateOrcamentoDto, @CurrentUser() user?: CurrentUserPayload) {
+    return this.orcamentosService.create(createOrcamentoDto, user);
   }
 
   @Get()
-  findAll() {
-    return this.orcamentosService.findAll();
+  @RequireEvento(EVENTOS_NEGOCIO.ORCAMENTO_CONSULTAR)
+  findAll(@CurrentUser() user?: CurrentUserPayload) {
+    return this.orcamentosService.findAll(user?.empresaId);
   }
 
   @Post('itens')
   @UseGuards(AuthTokenGuard, PermissionGuard)
   @RequireEvento(EVENTOS_NEGOCIO.ORCAMENTO_EDITAR_RASCUNHO)
-  createItem(@Body() createItensOrcamentoDto: CreateItensOrcamentoDto) {
-    return this.orcamentosService.createItem(createItensOrcamentoDto);
+  createItem(@Body() createItensOrcamentoDto: CreateItensOrcamentoDto, @CurrentUser() user?: CurrentUserPayload) {
+    return this.orcamentosService.createItem(createItensOrcamentoDto, user?.empresaId);
   }
 
   @Get('itens')
-  findAllItems() {
-    return this.orcamentosService.findAllItems();
+  @RequireEvento(EVENTOS_NEGOCIO.ORCAMENTO_CONSULTAR)
+  findAllItems(@CurrentUser() user?: CurrentUserPayload) {
+    return this.orcamentosService.findAllItems(user?.empresaId);
   }
 
   @Get('itens/:id')
-  findOneItem(@Param('id') id: string) {
-    return this.orcamentosService.findOneItem(id);
+  @RequireEvento(EVENTOS_NEGOCIO.ORCAMENTO_CONSULTAR)
+  findOneItem(@Param('id') id: string, @CurrentUser() user?: CurrentUserPayload) {
+    return this.orcamentosService.findOneItem(id, user?.empresaId);
   }
 
   @Patch('itens/:id')
   @UseGuards(AuthTokenGuard, PermissionGuard)
   @RequireEvento(EVENTOS_NEGOCIO.ORCAMENTO_EDITAR_RASCUNHO)
-  updateItem(@Param('id') id: string, @Body() updateItensOrcamentoDto: UpdateItensOrcamentoDto) {
-    return this.orcamentosService.updateItem(id, updateItensOrcamentoDto);
+  updateItem(@Param('id') id: string, @Body() updateItensOrcamentoDto: UpdateItensOrcamentoDto, @CurrentUser() user?: CurrentUserPayload) {
+    return this.orcamentosService.updateItem(id, updateItensOrcamentoDto, user?.empresaId);
   }
 
   @Delete('itens/:id')
   @UseGuards(AuthTokenGuard, PermissionGuard)
   @RequireEvento(EVENTOS_NEGOCIO.ORCAMENTO_EDITAR_RASCUNHO)
-  removeItem(@Param('id') id: string) {
-    return this.orcamentosService.removeItem(id);
+  removeItem(@Param('id') id: string, @CurrentUser() user?: CurrentUserPayload) {
+    return this.orcamentosService.removeItem(id, user?.empresaId);
   }
 
   @Get(':id/itens')
-  findItemsByOrcamento(@Param('id') id: string) {
-    return this.orcamentosService.findItemsByOrcamento(id);
+  @RequireEvento(EVENTOS_NEGOCIO.ORCAMENTO_CONSULTAR)
+  findItemsByOrcamento(@Param('id') id: string, @CurrentUser() user?: CurrentUserPayload) {
+    return this.orcamentosService.findItemsByOrcamento(id, user?.empresaId);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.orcamentosService.findOne(id);
+  @RequireEvento(EVENTOS_NEGOCIO.ORCAMENTO_CONSULTAR)
+  findOne(@Param('id') id: string, @CurrentUser() user?: CurrentUserPayload) {
+    return this.orcamentosService.findOne(id, user?.empresaId);
   }
 
   @Post(':id/enviar')
   @UseGuards(AuthTokenGuard, PermissionGuard)
   @RequireEvento(EVENTOS_NEGOCIO.ORCAMENTO_ENVIAR)
-  enviar(@Param('id') id: string) {
-    return this.orcamentosService.update(id, { status: ORCAMENTO_STATUS.ENVIADO });
+  enviar(@Param('id') id: string, @CurrentUser() user?: CurrentUserPayload) {
+    return this.orcamentosService.update(id, { status: ORCAMENTO_STATUS.ENVIADO }, user?.empresaId);
   }
 
   @Post(':id/aprovar')
   @UseGuards(AuthTokenGuard, PermissionGuard)
   @RequireEvento(EVENTOS_NEGOCIO.ORCAMENTO_APROVAR)
-  aprovar(@Param('id') id: string) {
-    return this.orcamentosService.update(id, { status: ORCAMENTO_STATUS.APROVADO });
+  aprovar(@Param('id') id: string, @CurrentUser() user?: CurrentUserPayload) {
+    return this.orcamentosService.update(id, { status: ORCAMENTO_STATUS.APROVADO }, user?.empresaId);
   }
 
   @Post(':id/reprovar')
   @UseGuards(AuthTokenGuard, PermissionGuard)
   @RequireEvento(EVENTOS_NEGOCIO.ORCAMENTO_REPROVAR)
-  reprovar(@Param('id') id: string) {
-    return this.orcamentosService.update(id, { status: ORCAMENTO_STATUS.REPROVADO });
+  reprovar(@Param('id') id: string, @CurrentUser() user?: CurrentUserPayload) {
+    return this.orcamentosService.update(id, { status: ORCAMENTO_STATUS.REPROVADO }, user?.empresaId);
   }
 
   @Post(':id/cancelar')
   @UseGuards(AuthTokenGuard, PermissionGuard)
   @RequireEvento(EVENTOS_NEGOCIO.ORCAMENTO_CANCELAR)
-  cancelar(@Param('id') id: string) {
-    return this.orcamentosService.update(id, { status: ORCAMENTO_STATUS.CANCELADO });
+  cancelar(@Param('id') id: string, @CurrentUser() user?: CurrentUserPayload) {
+    return this.orcamentosService.update(id, { status: ORCAMENTO_STATUS.CANCELADO }, user?.empresaId);
   }
 
   @Post(':id/gerar-os')
@@ -113,14 +118,14 @@ export class OrcamentosController {
     reprovado: EVENTOS_NEGOCIO.ORCAMENTO_REPROVAR,
     cancelado: EVENTOS_NEGOCIO.ORCAMENTO_CANCELAR,
   }, EVENTOS_NEGOCIO.ORCAMENTO_EDITAR_RASCUNHO)
-  update(@Param('id') id: string, @Body() updateOrcamentoDto: UpdateOrcamentoDto) {
-    return this.orcamentosService.update(id, updateOrcamentoDto);
+  update(@Param('id') id: string, @Body() updateOrcamentoDto: UpdateOrcamentoDto, @CurrentUser() user?: CurrentUserPayload) {
+    return this.orcamentosService.update(id, updateOrcamentoDto, user?.empresaId);
   }
 
   @Delete(':id')
   @UseGuards(AuthTokenGuard, PermissionGuard)
   @RequireEvento(EVENTOS_NEGOCIO.ORCAMENTO_CANCELAR)
-  remove(@Param('id') id: string) {
-    return this.orcamentosService.remove(id);
+  remove(@Param('id') id: string, @CurrentUser() user?: CurrentUserPayload) {
+    return this.orcamentosService.remove(id, user?.empresaId);
   }
 }

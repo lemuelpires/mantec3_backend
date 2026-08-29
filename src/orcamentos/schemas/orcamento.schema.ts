@@ -37,3 +37,7 @@ export class Orcamento {
 }
 
 export const OrcamentoSchema = SchemaFactory.createForClass(Orcamento);
+
+OrcamentoSchema.index({ empresaId: 1, status: 1, criadoEm: -1 });
+OrcamentoSchema.index({ empresaId: 1, clienteId: 1, criadoEm: -1 });
+OrcamentoSchema.index({ empresaId: 1, recebimentoEquipamentoId: 1 });

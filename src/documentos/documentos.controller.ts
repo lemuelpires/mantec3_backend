@@ -14,6 +14,7 @@ export class DocumentosController {
   constructor(private readonly documentosService: DocumentosService) {}
 
   @Get('orcamentos/:id/pdf')
+  @RequireEvento(EVENTOS_NEGOCIO.ORCAMENTO_CONSULTAR)
   async orcamentoPdf(@Param('id') id: string, @Res() res: Response, @CurrentUser() user?: CurrentUserPayload) {
     const pdf = await this.documentosService.gerarOrcamentoPdf(id, user?.empresaId);
     this.sendPdf(res, pdf, `orcamento-${id}.pdf`);

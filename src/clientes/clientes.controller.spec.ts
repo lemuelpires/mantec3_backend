@@ -38,7 +38,7 @@ describe('ClientesController', () => {
 
     controller.create(dto, user);
 
-    expect(service.create).toHaveBeenCalledWith(dto, 'user-1');
+    expect(service.create).toHaveBeenCalledWith(dto, 'user-1', 'empresa-1');
   });
 
   it('atualiza cliente repassando usuario autenticado para auditoria', () => {
@@ -47,7 +47,7 @@ describe('ClientesController', () => {
 
     controller.update('cliente-1', dto, user);
 
-    expect(service.update).toHaveBeenCalledWith('cliente-1', dto, 'user-1');
+    expect(service.update).toHaveBeenCalledWith('cliente-1', dto, 'user-1', 'empresa-1');
   });
 
   it('remove cliente repassando usuario autenticado para auditoria', () => {
@@ -55,6 +55,6 @@ describe('ClientesController', () => {
 
     controller.remove('cliente-1', user);
 
-    expect(service.remove).toHaveBeenCalledWith('cliente-1', 'user-1');
+    expect(service.remove).toHaveBeenCalledWith('cliente-1', 'user-1', 'empresa-1');
   });
 });

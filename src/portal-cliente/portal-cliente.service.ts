@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
-import { createHmac, timingSafeEqual } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { Model, Types } from 'mongoose';
 import { Cliente, ClienteDocument } from '../clientes/schemas/cliente.schema';
 import { Empresa, EmpresaDocument } from '../core/empresa/schemas/empresa.schema';
@@ -18,6 +18,9 @@ import { OrdemServico, OrdemServicoDocument } from '../ordens-servico/schemas/or
 import { DocumentosService } from '../documentos/documentos.service';
 import { LogEvento, LogEventoDocument } from '../auditoria/schemas/log-evento.schema';
 import { AUDITORIA_ENTIDADES, AUDITORIA_EVENTOS } from '../auditoria/auditoria-eventos';
+import { getRequiredSecret } from '../config/security.config';
+import { PortalClienteSessao, PortalClienteSessaoDocument } from './schemas/portal-cliente-sessao.schema';
+import type { CurrentUserPayload } from '../common/decorators/current-user.decorator';
 
 type PortalTokenPayload = {
   clienteId: string;
@@ -41,12 +44,13 @@ export class PortalClienteService {
     @InjectModel(Produto.name) private readonly produtoModel: Model<ProdutoDocument>,
     @InjectModel(Servico.name) private readonly servicoModel: Model<ServicoDocument>,
     @InjectModel(LogEvento.name) private readonly logEventoModel: Model<LogEventoDocument>,
+    @InjectModel(PortalClienteSessao.name) private readonly portalSessaoModel: Model<PortalClienteSessaoDocument>,
     private readonly orcamentosService: OrcamentosService,
     private readonly documentosService: DocumentosService,
     private readonly configService: ConfigService,
   ) {}
 
-  async criarSessaoCliente(clienteId: string, empresaIdUsuario?: string) {
+  async criarSessaoCliente(clienteId: string, user?: CurrentUserPayload) {
     if (!Types.ObjectId.isValid(clienteId)) {
       throw new BadRequestException('Cliente invalido.');
     }
@@ -57,26 +61,31 @@ export class PortalClienteService {
     }
 
     const empresaId = String(cliente.empresaId);
-    if (empresaIdUsuario && empresaId !== empresaIdUsuario) {
+    if (user?.empresaId && empresaId !== user.empresaId) {
       throw new UnauthorizedException('Cliente nao pertence a empresa do usuario.');
     }
 
     const expiresAt = new Date(Date.now() + PORTAL_TOKEN_TTL_SECONDS * 1000);
-    const token = this.signToken({
-      clienteId,
-      empresaId,
-      exp: Math.floor(expiresAt.getTime() / 1000),
+    const token = randomBytes(32).toString('base64url');
+    const sessao = await this.portalSessaoModel.create({
+      tokenHash: this.hashPortalToken(token),
+      clienteId: new Types.ObjectId(clienteId),
+      empresaId: new Types.ObjectId(empresaId),
+      criadoPorUsuarioId: user?.id && Types.ObjectId.isValid(user.id) ? new Types.ObjectId(user.id) : undefined,
+      expiraEm: expiresAt,
+      acessos: 0,
     });
 
     return {
       token,
+      sessaoId: String(sessao._id),
       expiresAt: expiresAt.toISOString(),
       path: `/cliente/portal/${token}`,
     };
   }
 
   async getPortal(token: string) {
-    const payload = this.verifyToken(token);
+    const payload = await this.verifyToken(token);
     const clienteObjectId = new Types.ObjectId(payload.clienteId);
     const empresaObjectId = new Types.ObjectId(payload.empresaId);
 
@@ -233,7 +242,7 @@ export class PortalClienteService {
   }
 
   async decidirOrcamento(token: string, orcamentoId: string, decisao: 'aprovar' | 'reprovar') {
-    const payload = this.verifyToken(token);
+    const payload = await this.verifyToken(token);
     const orcamento = await this.orcamentoModel.findOne({
       _id: new Types.ObjectId(orcamentoId),
       clienteId: new Types.ObjectId(payload.clienteId),
@@ -258,53 +267,73 @@ export class PortalClienteService {
   }
 
   async gerarAtendimentoPdf(token: string, atendimentoId: string) {
-    const payload = this.verifyToken(token);
+    const payload = await this.verifyToken(token);
     await this.assertAtendimentoPertenceAoCliente(atendimentoId, payload);
     return this.documentosService.gerarAtendimentoPdf(atendimentoId, payload.empresaId);
   }
 
-  private signToken(payload: PortalTokenPayload) {
-    const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url');
-    return `${encodedPayload}.${this.createSignature(encodedPayload)}`;
+  async revogarSessao(sessaoId: string, user?: CurrentUserPayload, motivo = 'Revogada pelo usuario') {
+    if (!Types.ObjectId.isValid(sessaoId)) {
+      throw new BadRequestException('Sessao invalida.');
+    }
+
+    const query: Record<string, unknown> = { _id: new Types.ObjectId(sessaoId) };
+    if (user?.empresaId) {
+      query.empresaId = new Types.ObjectId(user.empresaId);
+    }
+
+    const sessao = await this.portalSessaoModel
+      .findOneAndUpdate(
+        query,
+        { revogadoEm: new Date(), motivoRevogacao: motivo },
+        { new: true },
+      )
+      .lean()
+      .exec();
+
+    if (!sessao) {
+      throw new NotFoundException('Sessao do portal nao encontrada.');
+    }
+
+    return { id: String(sessao._id), revogadoEm: sessao.revogadoEm };
   }
 
-  private verifyToken(token: string): PortalTokenPayload {
-    const [encodedPayload, signature] = token.split('.');
-    if (!encodedPayload || !signature) {
+  private async verifyToken(token: string): Promise<PortalTokenPayload> {
+    const now = new Date();
+    const sessao = await this.portalSessaoModel
+      .findOne({ tokenHash: this.hashPortalToken(token), revogadoEm: { $exists: false } })
+      .exec();
+
+    if (!sessao) {
       throw new UnauthorizedException('Token do portal invalido.');
     }
 
-    const expectedSignature = this.createSignature(encodedPayload);
-    const signatureBuffer = Buffer.from(signature);
-    const expectedBuffer = Buffer.from(expectedSignature);
-
-    if (
-      signatureBuffer.length !== expectedBuffer.length ||
-      !timingSafeEqual(signatureBuffer, expectedBuffer)
-    ) {
-      throw new UnauthorizedException('Token do portal invalido.');
-    }
-
-    const payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8')) as PortalTokenPayload;
-    if (payload.exp < Math.floor(Date.now() / 1000)) {
+    if (sessao.expiraEm.getTime() < now.getTime()) {
       throw new UnauthorizedException('Sessao do portal expirada.');
     }
 
-    return payload;
+    sessao.ultimoAcessoEm = now;
+    sessao.acessos = (sessao.acessos || 0) + 1;
+    await sessao.save();
+
+    return {
+      clienteId: String(sessao.clienteId),
+      empresaId: String(sessao.empresaId),
+      exp: Math.floor(sessao.expiraEm.getTime() / 1000),
+    };
   }
 
-  private createSignature(encodedPayload: string) {
-    return createHmac('sha256', this.getSecret())
-      .update(encodedPayload)
-      .digest('base64url');
+  private hashPortalToken(token: string) {
+    return createHash('sha256')
+      .update(`${this.getSecret()}:${token}`)
+      .digest('hex');
   }
 
   private getSecret() {
-    return (
-      this.configService.get<string>('PORTAL_CLIENTE_SECRET') ||
-      this.configService.get<string>('AUTH_TOKEN_SECRET') ||
-      this.configService.get<string>('JWT_SECRET') ||
-      'mantec-local-dev-secret'
+    return getRequiredSecret(
+      this.configService,
+      ['PORTAL_CLIENTE_SECRET', 'AUTH_TOKEN_SECRET', 'JWT_SECRET'],
+      'mantec-local-dev-secret',
     );
   }
 

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { MovimentosEstoque, MovimentosEstoqueDocument } from './schemas/movimento-estoque.schema';
@@ -32,11 +32,14 @@ export class EstoqueService {
     private readonly auditoriaService: AuditoriaService,
   ) {}
 
-  async create(createMovimentoEstoqueDto: CreateMovimentoEstoqueDto, actorId?: string) {
-    this.assertMovimentoValido(createMovimentoEstoqueDto.tipo, createMovimentoEstoqueDto.quantidade);
-    await this.assertMovimentoNaoNegativaEstoque(createMovimentoEstoqueDto);
+  async create(createMovimentoEstoqueDto: CreateMovimentoEstoqueDto, actorId?: string, actorEmpresaId?: string) {
+    const empresaId = this.getEmpresaIdPermitida(createMovimentoEstoqueDto.empresaId, actorEmpresaId);
+    const movimentoData = { ...createMovimentoEstoqueDto, empresaId };
+    await this.assertProdutoDaEmpresa(movimentoData.produtoId, empresaId);
+    this.assertMovimentoValido(movimentoData.tipo, movimentoData.quantidade);
+    await this.assertMovimentoNaoNegativaEstoque(movimentoData);
 
-    const createdMovimento = new this.movimentosEstoqueModel(createMovimentoEstoqueDto);
+    const createdMovimento = new this.movimentosEstoqueModel(movimentoData);
     const saved = await createdMovimento.save();
 
     if (actorId) {
@@ -46,21 +49,24 @@ export class EstoqueService {
     return saved;
   }
 
-  findAll() {
+  findAll(empresaId?: string) {
+    this.assertEmpresaInformada(empresaId);
     return this.movimentosEstoqueModel
-      .find()
+      .find({ empresaId })
       .populate('produtoId', 'nome codigoInterno precoVenda')
       .exec();
   }
 
-  findOne(id: string) {
+  findOne(id: string, empresaId?: string) {
+    this.assertEmpresaInformada(empresaId);
     return this.movimentosEstoqueModel
-      .findById(id)
+      .findOne({ _id: id, empresaId })
       .populate('produtoId', 'nome codigoInterno precoVenda')
       .exec();
   }
 
-  async update(id: string, updateMovimentoEstoqueDto: UpdateMovimentoEstoqueDto, actorId?: string) {
+  async update(id: string, updateMovimentoEstoqueDto: UpdateMovimentoEstoqueDto, actorId?: string, actorEmpresaId?: string) {
+    this.assertEmpresaInformada(actorEmpresaId);
     if (updateMovimentoEstoqueDto.tipo || updateMovimentoEstoqueDto.quantidade !== undefined) {
       this.assertMovimentoValido(
         updateMovimentoEstoqueDto.tipo ?? '',
@@ -69,17 +75,22 @@ export class EstoqueService {
       );
     }
 
-    const current = await this.movimentosEstoqueModel.findById(id).exec();
+    const current = await this.movimentosEstoqueModel.findOne({ _id: id, empresaId: actorEmpresaId }).exec();
     if (current) {
+      const empresaId = this.getEmpresaIdPermitida(updateMovimentoEstoqueDto.empresaId, actorEmpresaId);
       const nextMovimento = {
         produtoId: updateMovimentoEstoqueDto.produtoId ?? current.produtoId?.toString(),
         tipo: updateMovimentoEstoqueDto.tipo ?? current.tipo,
         quantidade: updateMovimentoEstoqueDto.quantidade ?? current.quantidade,
+        empresaId,
       };
+      await this.assertProdutoDaEmpresa(nextMovimento.produtoId, empresaId);
       await this.assertMovimentoNaoNegativaEstoque(nextMovimento, current);
     }
 
-    const updated = await this.movimentosEstoqueModel.findByIdAndUpdate(id, updateMovimentoEstoqueDto, { new: true }).exec();
+    const updated = await this.movimentosEstoqueModel
+      .findOneAndUpdate({ _id: id, empresaId: actorEmpresaId }, { ...updateMovimentoEstoqueDto, empresaId: actorEmpresaId }, { new: true })
+      .exec();
 
     if (actorId && updated) {
       await this.registrarAuditoriaEstoque(updated, actorId, 'atualizado');
@@ -88,8 +99,9 @@ export class EstoqueService {
     return updated;
   }
 
-  async remove(id: string, actorId?: string) {
-    const removed = await this.movimentosEstoqueModel.findByIdAndDelete(id).exec();
+  async remove(id: string, actorId?: string, empresaId?: string) {
+    this.assertEmpresaInformada(empresaId);
+    const removed = await this.movimentosEstoqueModel.findOneAndDelete({ _id: id, empresaId }).exec();
 
     if (actorId && removed) {
       await this.registrarAuditoriaEstoque(removed, actorId, 'removido');
@@ -98,8 +110,10 @@ export class EstoqueService {
     return removed;
   }
 
-  async getSaldoProduto(produtoId: string) {
-    const movimentos = await this.movimentosEstoqueModel.find({ produtoId }).exec();
+  async getSaldoProduto(produtoId: string, empresaId?: string) {
+    this.assertEmpresaInformada(empresaId);
+    await this.assertProdutoDaEmpresa(produtoId, empresaId);
+    const movimentos = await this.movimentosEstoqueModel.find({ produtoId, empresaId }).exec();
     const saldo = calcularSaldoMovimentos(movimentos);
     const disponibilidade = calcularDisponibilidadeMovimentos(movimentos);
 
@@ -111,8 +125,10 @@ export class EstoqueService {
     };
   }
 
-  async getDisponibilidadeProduto(produtoId: string) {
-    const movimentos = await this.movimentosEstoqueModel.find({ produtoId }).exec();
+  async getDisponibilidadeProduto(produtoId: string, empresaId?: string) {
+    this.assertEmpresaInformada(empresaId);
+    await this.assertProdutoDaEmpresa(produtoId, empresaId);
+    const movimentos = await this.movimentosEstoqueModel.find({ produtoId, empresaId }).exec();
     const disponibilidade = calcularDisponibilidadeMovimentos(movimentos);
 
     return {
@@ -122,11 +138,12 @@ export class EstoqueService {
     };
   }
 
-  async getDisponibilidadeProdutos() {
+  async getDisponibilidadeProdutos(empresaId?: string) {
+    this.assertEmpresaInformada(empresaId);
     const [produtos, movimentos] = await Promise.all([
-      this.produtoModel.find().lean().exec(),
+      this.produtoModel.find({ empresaId }).lean().exec(),
       this.movimentosEstoqueModel
-        .find()
+        .find({ empresaId })
         .populate('produtoId', 'nome codigoInterno precoVenda empresaId')
         .exec(),
     ]);
@@ -173,10 +190,12 @@ export class EstoqueService {
     return disponibilidadePorProduto;
   }
 
-  async assertSaldoDisponivel(produtoId: string, quantidade: number, saldoAdicional = 0) {
+  async assertSaldoDisponivel(produtoId: string, quantidade: number, saldoAdicional = 0, empresaId?: string) {
     this.assertQuantidadeValida(quantidade);
 
-    const { disponivel } = await this.getDisponibilidadeProduto(produtoId);
+    const { disponivel } = empresaId
+      ? await this.getDisponibilidadeProduto(produtoId, empresaId)
+      : await this.getDisponibilidadeProdutoInterno(produtoId);
     const saldoDisponivel = disponivel + Number(saldoAdicional || 0);
     if (saldoDisponivel < Number(quantidade)) {
       throw new BadRequestException(`Saldo insuficiente para o produto. Disponivel: ${saldoDisponivel}. Solicitado: ${quantidade}.`);
@@ -215,7 +234,11 @@ export class EstoqueService {
       return;
     }
 
-    const movimentos = await this.movimentosEstoqueModel.find({ produtoId }).exec();
+    const filtro: Record<string, unknown> = { produtoId };
+    if ('empresaId' in movimento && movimento.empresaId) {
+      filtro.empresaId = movimento.empresaId;
+    }
+    const movimentos = await this.movimentosEstoqueModel.find(filtro).exec();
     const movimentosConsiderados = movimentoAtual
       ? movimentos.filter((item) => String(item._id) !== String(movimentoAtual._id))
       : movimentos;
@@ -247,6 +270,46 @@ export class EstoqueService {
     }
 
     return undefined;
+  }
+
+  private async getDisponibilidadeProdutoInterno(produtoId: string) {
+    const movimentos = await this.movimentosEstoqueModel.find({ produtoId }).exec();
+    const disponibilidade = calcularDisponibilidadeMovimentos(movimentos);
+
+    return {
+      produtoId,
+      ...disponibilidade,
+      totalMovimentos: movimentos.length,
+    };
+  }
+
+  private async assertProdutoDaEmpresa(produtoId: string, empresaId?: string) {
+    this.assertEmpresaInformada(empresaId);
+    const produto = await this.produtoModel.findOne({ _id: produtoId, empresaId }).select('_id').lean().exec();
+    if (!produto) {
+      throw new BadRequestException('Produto nao encontrado para a empresa do usuario.');
+    }
+  }
+
+  private getEmpresaIdPermitida(inputEmpresaId: unknown, userEmpresaId?: string) {
+    if (userEmpresaId) {
+      if (inputEmpresaId && String(inputEmpresaId) !== String(userEmpresaId)) {
+        throw new UnauthorizedException('Empresa informada nao pertence ao usuario.');
+      }
+      return userEmpresaId;
+    }
+
+    if (!inputEmpresaId) {
+      throw new UnauthorizedException('Empresa do movimento nao informada.');
+    }
+
+    return String(inputEmpresaId);
+  }
+
+  private assertEmpresaInformada(empresaId?: string): asserts empresaId is string {
+    if (!empresaId) {
+      throw new UnauthorizedException('Empresa do usuario nao informada.');
+    }
   }
 
   private async registrarAuditoriaEstoque(

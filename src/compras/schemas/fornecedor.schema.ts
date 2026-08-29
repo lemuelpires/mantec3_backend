@@ -11,7 +11,7 @@ export class Fornecedor {
   @Prop({ required: true })
   nome: string;
 
-  @Prop({ required: true, unique: true })
+  @Prop({ required: true })
   cnpj: string;
 
   @Prop()
@@ -28,3 +28,6 @@ export class Fornecedor {
 }
 
 export const FornecedorSchema = SchemaFactory.createForClass(Fornecedor);
+
+FornecedorSchema.index({ empresaId: 1, cnpj: 1 }, { unique: true });
+FornecedorSchema.index({ empresaId: 1, ativo: 1, nome: 1 });

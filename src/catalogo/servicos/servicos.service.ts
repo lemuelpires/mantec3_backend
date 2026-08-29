@@ -1,9 +1,10 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { Model } from 'mongoose';
 import { Servico, ServicoDocument } from './schemas/servico.schema';
 import { CreateServicoDto } from './dto/create-servico.dto';
 import { UpdateServicoDto } from './dto/update-servico.dto';
+import { centavosParaDecimal128, dinheiroParaCentavos } from '../../financeiro/financeiro-adm/financeiro-adm.types';
 
 @Injectable()
 export class ServicosService {
@@ -11,21 +12,19 @@ export class ServicosService {
     @InjectModel(Servico.name) private servicoModel: Model<ServicoDocument>,
   ) {}
 
-  create(createServicoDto: CreateServicoDto) {
+  create(createServicoDto: CreateServicoDto, empresaId?: string) {
     try {
-      console.log('CreateServico DTO recebido:', createServicoDto);
       const servicoData: any = { ...createServicoDto };
+      if (empresaId) {
+        servicoData.empresaId = empresaId;
+      }
       if (
         createServicoDto.precoPadrao !== undefined &&
         createServicoDto.precoPadrao !== null &&
         createServicoDto.precoPadrao !== ''
       ) {
         try {
-          const precoStr = String(createServicoDto.precoPadrao).replace(',', '.');
-          if (!/^-?\d+(\.\d+)?$/.test(precoStr)) {
-            throw new Error('Formato inválido para precoPadrao');
-          }
-          servicoData.precoPadrao = Types.Decimal128.fromString(precoStr);
+          servicoData.precoPadrao = centavosParaDecimal128(this.parseValorNaoNegativoCentavos(createServicoDto.precoPadrao, 'precoPadrao'));
         } catch (err) {
           throw new BadRequestException('precoPadrao inválido');
         }
@@ -33,40 +32,53 @@ export class ServicosService {
       const createdServico = new this.servicoModel(servicoData);
       return createdServico.save();
     } catch (error) {
-      console.error('Erro ao criar servico:', error);
       throw error;
     }
   }
 
-  findAll() {
-    return this.servicoModel.find().exec();
+  findAll(empresaId?: string) {
+    return this.servicoModel.find(this.getEmpresaQuery(empresaId, { ativo: { $ne: false } })).exec();
   }
 
-  findOne(id: string) {
-    return this.servicoModel.findById(id).exec();
+  findOne(id: string, empresaId?: string) {
+    return this.servicoModel.findOne(this.getEmpresaQuery(empresaId, { _id: id })).exec();
   }
 
-  update(id: string, updateServicoDto: UpdateServicoDto) {
+  update(id: string, updateServicoDto: UpdateServicoDto, empresaId?: string) {
     const updateData: any = { ...updateServicoDto };
+    delete updateData.empresaId;
     if (
       updateServicoDto.precoPadrao !== undefined &&
       updateServicoDto.precoPadrao !== null &&
       updateServicoDto.precoPadrao !== ''
     ) {
       try {
-        const precoStr = String(updateServicoDto.precoPadrao).replace(',', '.');
-        if (!/^-?\d+(\.\d+)?$/.test(precoStr)) {
-          throw new Error('Formato inválido para precoPadrao');
-        }
-        updateData.precoPadrao = Types.Decimal128.fromString(precoStr);
+        updateData.precoPadrao = centavosParaDecimal128(this.parseValorNaoNegativoCentavos(updateServicoDto.precoPadrao, 'precoPadrao'));
       } catch (err) {
         throw new BadRequestException('precoPadrao inválido');
       }
     }
-    return this.servicoModel.findByIdAndUpdate(id, updateData, { new: true }).exec();
+    return this.servicoModel
+      .findOneAndUpdate(this.getEmpresaQuery(empresaId, { _id: id }), updateData, { new: true })
+      .exec();
   }
 
-  remove(id: string) {
-    return this.servicoModel.findByIdAndDelete(id).exec();
+  remove(id: string, empresaId?: string) {
+    return this.servicoModel
+      .findOneAndUpdate(this.getEmpresaQuery(empresaId, { _id: id }), { ativo: false }, { new: true })
+      .exec();
+  }
+
+  private getEmpresaQuery(empresaId?: string, base: Record<string, unknown> = {}) {
+    return empresaId ? { ...base, empresaId } : base;
+  }
+
+  private parseValorNaoNegativoCentavos(value: unknown, campo: string) {
+    const centavos = dinheiroParaCentavos(value);
+    if (!Number.isFinite(centavos) || centavos < 0) {
+      throw new BadRequestException(`${campo} invalido.`);
+    }
+
+    return centavos;
   }
 }

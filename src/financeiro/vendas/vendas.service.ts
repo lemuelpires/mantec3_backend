@@ -7,10 +7,11 @@ import { CreateVendaDto } from './dto/create-venda.dto';
 import { UpdateVendaDto } from './dto/update-venda.dto';
 import { CreateItensVendaDto } from './dto/create-itens-venda.dto';
 import { UpdateItensVendaDto } from './dto/update-itens-venda.dto';
-import { isVendaStatusFinanceiro } from './venda-financeiro.states';
+import { VENDA_STATUS_FINANCEIRO, isVendaStatusFinanceiro } from './venda-financeiro.states';
 import { AuditoriaService } from '../../auditoria/auditoria.service';
 import { AUDITORIA_ENTIDADES, AUDITORIA_EVENTOS } from '../../auditoria/auditoria-eventos';
 import { FinanceiroAdmService } from '../financeiro-adm/financeiro-adm.service';
+import { centavosParaDecimal128, dinheiroParaCentavos } from '../financeiro-adm/financeiro-adm.types';
 
 @Injectable()
 export class VendasService {
@@ -34,16 +35,13 @@ export class VendasService {
       throw new BadRequestException('Origem da venda invalida. Use venda direta ou ordem de servico.');
     }
 
-    const vendaData: any = { ...dto };
-    if (dto.subtotal) {
-      vendaData.subtotal = Types.Decimal128.fromString(dto.subtotal);
-    }
-    if (dto.descontos) {
-      vendaData.descontos = Types.Decimal128.fromString(dto.descontos);
-    }
-    if (dto.total) {
-      vendaData.total = Types.Decimal128.fromString(dto.total);
-    }
+    const totais = this.calcularTotaisVenda(itens, dto);
+    const vendaData: any = {
+      ...dto,
+      subtotal: centavosParaDecimal128(totais.subtotalCentavos),
+      descontos: centavosParaDecimal128(totais.descontosCentavos),
+      total: centavosParaDecimal128(totais.totalCentavos),
+    };
     const createdVenda = new this.vendaModel(vendaData);
     await createdVenda.save();
 
@@ -55,7 +53,7 @@ export class VendasService {
           referenciaId: item.referenciaId,
           quantidade: Number(item.quantidade),
           valorUnitario: String(item.valorUnitario),
-          totalItem: String(item.totalItem),
+          totalItem: String(this.calcularTotalItemCentavos(item)),
         }, actorEmpresaId);
       }
     }
@@ -71,7 +69,7 @@ export class VendasService {
           clienteId: dto.clienteId,
           origemTipo: dto.origemTipo,
           origemId: dto.origemId,
-          total: dto.total,
+          total: totais.totalCentavos / 100,
           statusFinanceiro: dto.statusFinanceiro,
         },
       });
@@ -122,14 +120,25 @@ export class VendasService {
     }
 
     const updateData: any = { ...dto };
-    if (dto.subtotal) {
-      updateData.subtotal = Types.Decimal128.fromString(dto.subtotal);
-    }
-    if (dto.descontos) {
-      updateData.descontos = Types.Decimal128.fromString(dto.descontos);
-    }
-    if (dto.total) {
-      updateData.total = Types.Decimal128.fromString(dto.total);
+    delete updateData.subtotal;
+    delete updateData.total;
+    delete updateData.descontos;
+
+    if (itens !== undefined) {
+      const totais = this.calcularTotaisVenda(itens, dto);
+      updateData.subtotal = centavosParaDecimal128(totais.subtotalCentavos);
+      updateData.descontos = centavosParaDecimal128(totais.descontosCentavos);
+      updateData.total = centavosParaDecimal128(totais.totalCentavos);
+    } else if (dto.descontos !== undefined) {
+      const itensAtuais = await this.itensVendaModel.find({ vendaId: id }).lean().exec();
+      const totais = this.calcularTotaisVenda(itensAtuais, {
+        ...dto,
+        subtotal: vendaAtual.subtotal?.toString(),
+        total: vendaAtual.total?.toString(),
+      });
+      updateData.subtotal = centavosParaDecimal128(totais.subtotalCentavos);
+      updateData.descontos = centavosParaDecimal128(totais.descontosCentavos);
+      updateData.total = centavosParaDecimal128(totais.totalCentavos);
     }
     const updated = await this.vendaModel.findOneAndUpdate(this.getEmpresaQuery(actorEmpresaId, { _id: id }), updateData, { new: true }).exec();
     if (!updated) {
@@ -145,8 +154,8 @@ export class VendasService {
             tipo: item.tipo,
             referenciaId: item.referenciaId,
             quantidade: Number(item.quantidade),
-          valorUnitario: String(item.valorUnitario),
-          totalItem: String(item.totalItem),
+            valorUnitario: String(item.valorUnitario),
+            totalItem: String(this.calcularTotalItemCentavos(item)),
           }, actorEmpresaId);
         }
       }
@@ -188,7 +197,13 @@ export class VendasService {
       actorEmpresaId,
     );
 
-    const removed = await this.vendaModel.findOneAndDelete(this.getEmpresaQuery(actorEmpresaId, { _id: id })).exec();
+    const removed = await this.vendaModel
+      .findOneAndUpdate(
+        this.getEmpresaQuery(actorEmpresaId, { _id: id }),
+        { statusFinanceiro: VENDA_STATUS_FINANCEIRO.CANCELADO },
+        { new: true },
+      )
+      .exec();
 
     if (actorId && removed) {
       await this.auditoriaService.registrarEventoNegocio({
@@ -198,7 +213,7 @@ export class VendasService {
         entidade: AUDITORIA_ENTIDADES.VENDA,
         entidadeId: removed._id as Types.ObjectId,
         dados: {
-          operacao: 'removida',
+          operacao: 'cancelada',
           statusFinanceiro: removed.statusFinanceiro,
         },
       });
@@ -211,15 +226,15 @@ export class VendasService {
   async createItem(createItensVendaDto: CreateItensVendaDto, actorEmpresaId?: string) {
     await this.assertVendaPertenceEmpresa(createItensVendaDto.vendaId, actorEmpresaId);
 
-    const itemData: any = { ...createItensVendaDto };
-    if (createItensVendaDto.valorUnitario) {
-      itemData.valorUnitario = Types.Decimal128.fromString(createItensVendaDto.valorUnitario);
-    }
-    if (createItensVendaDto.totalItem) {
-      itemData.totalItem = Types.Decimal128.fromString(createItensVendaDto.totalItem);
-    }
+    const itemData: any = {
+      ...createItensVendaDto,
+      valorUnitario: centavosParaDecimal128(this.parseValorCentavos(createItensVendaDto.valorUnitario, 'valorUnitario')),
+      totalItem: centavosParaDecimal128(this.calcularTotalItemCentavos(createItensVendaDto)),
+    };
     const createdItem = new this.itensVendaModel(itemData);
-    return createdItem.save();
+    const saved = await createdItem.save();
+    await this.recalcularTotaisVenda(createItensVendaDto.vendaId);
+    return saved;
   }
 
   async findAllItems(empresaId?: string) {
@@ -250,13 +265,17 @@ export class VendasService {
     await this.assertVendaPertenceEmpresa((updateItensVendaDto.vendaId ?? item.vendaId).toString(), actorEmpresaId);
 
     const updateData: any = { ...updateItensVendaDto };
-    if (updateItensVendaDto.valorUnitario) {
-      updateData.valorUnitario = Types.Decimal128.fromString(updateItensVendaDto.valorUnitario);
+    const quantidade = updateItensVendaDto.quantidade ?? item.quantidade;
+    const valorUnitario = updateItensVendaDto.valorUnitario ?? item.valorUnitario?.toString();
+    updateData.valorUnitario = centavosParaDecimal128(this.parseValorCentavos(valorUnitario, 'valorUnitario'));
+    updateData.totalItem = centavosParaDecimal128(this.calcularTotalItemCentavos({ quantidade, valorUnitario }));
+
+    const updated = await this.itensVendaModel.findByIdAndUpdate(id, updateData, { new: true }).exec();
+    await this.recalcularTotaisVenda(item.vendaId.toString());
+    if (updateItensVendaDto.vendaId && updateItensVendaDto.vendaId !== item.vendaId.toString()) {
+      await this.recalcularTotaisVenda(updateItensVendaDto.vendaId);
     }
-    if (updateItensVendaDto.totalItem) {
-      updateData.totalItem = Types.Decimal128.fromString(updateItensVendaDto.totalItem);
-    }
-    return this.itensVendaModel.findByIdAndUpdate(id, updateData, { new: true }).exec();
+    return updated;
   }
 
   async removeItem(id: string, actorEmpresaId?: string) {
@@ -265,8 +284,11 @@ export class VendasService {
       throw new NotFoundException('Item de venda nao encontrado.');
     }
 
-    await this.assertVendaPertenceEmpresa(item.vendaId.toString(), actorEmpresaId);
-    return this.itensVendaModel.findByIdAndDelete(id).exec();
+    const vendaId = item.vendaId.toString();
+    await this.assertVendaPertenceEmpresa(vendaId, actorEmpresaId);
+    const removed = await this.itensVendaModel.findByIdAndDelete(id).exec();
+    await this.recalcularTotaisVenda(vendaId);
+    return removed;
   }
 
   private async attachItensVenda(venda: any) {
@@ -294,8 +316,8 @@ export class VendasService {
               .lean()
               .exec();
           }
-        } catch (e) {
-          console.error('Erro ao popular item de venda:', e);
+        } catch (_error) {
+          referenciaDetails = null;
         }
         return {
           ...item,
@@ -334,5 +356,66 @@ export class VendasService {
   private async getVendaIdsEmpresa(empresaId: string) {
     const vendas = await this.vendaModel.find({ empresaId }).select('_id').lean().exec();
     return vendas.map((venda) => venda._id);
+  }
+
+  private calcularTotaisVenda(itens: any[] | undefined, dto: { subtotal?: unknown; descontos?: unknown; total?: unknown }) {
+    const subtotalCentavos = Array.isArray(itens) && itens.length > 0
+      ? itens.reduce((sum, item) => sum + this.calcularTotalItemCentavos(item), 0)
+      : this.parseValorCentavos(dto.subtotal ?? dto.total ?? 0, 'subtotal');
+    const descontosCentavos = dto.descontos !== undefined
+      ? this.parseValorCentavos(dto.descontos, 'descontos')
+      : 0;
+
+    if (subtotalCentavos < 0 || descontosCentavos < 0) {
+      throw new BadRequestException('Valores da venda nao podem ser negativos.');
+    }
+
+    if (descontosCentavos > subtotalCentavos) {
+      throw new BadRequestException('Desconto nao pode ser maior que o subtotal da venda.');
+    }
+
+    return {
+      subtotalCentavos,
+      descontosCentavos,
+      totalCentavos: subtotalCentavos - descontosCentavos,
+    };
+  }
+
+  private calcularTotalItemCentavos(item: { quantidade?: unknown; valorUnitario?: unknown }) {
+    const quantidade = Number(item.quantidade ?? 0);
+    const valorUnitarioCentavos = this.parseValorCentavos(item.valorUnitario ?? 0, 'valorUnitario');
+    if (!Number.isFinite(quantidade) || quantidade <= 0) {
+      throw new BadRequestException('Quantidade do item deve ser maior que zero.');
+    }
+
+    if (valorUnitarioCentavos < 0) {
+      throw new BadRequestException('Valor unitario do item nao pode ser negativo.');
+    }
+
+    return Math.round(quantidade * valorUnitarioCentavos);
+  }
+
+  private parseValorCentavos(value: unknown, campo: string) {
+    const centavos = dinheiroParaCentavos(value);
+    if (!Number.isFinite(centavos)) {
+      throw new BadRequestException(`${campo} invalido.`);
+    }
+
+    return centavos;
+  }
+
+  private async recalcularTotaisVenda(vendaId: string) {
+    const venda = await this.vendaModel.findById(vendaId).exec();
+    if (!venda) {
+      return;
+    }
+
+    const itens = await this.itensVendaModel.find({ vendaId }).lean().exec();
+    const totais = this.calcularTotaisVenda(itens, { descontos: venda.descontos?.toString(), subtotal: venda.subtotal?.toString() });
+    await this.vendaModel.findByIdAndUpdate(vendaId, {
+      subtotal: centavosParaDecimal128(totais.subtotalCentavos),
+      descontos: centavosParaDecimal128(totais.descontosCentavos),
+      total: centavosParaDecimal128(totais.totalCentavos),
+    }).exec();
   }
 }

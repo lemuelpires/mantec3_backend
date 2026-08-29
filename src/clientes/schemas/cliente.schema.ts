@@ -11,7 +11,7 @@ export class Cliente {
   @Prop({ required: true })
   nome: string;
 
-  @Prop({ required: true, unique: true })
+  @Prop({ required: true })
   cpfCnpj: string;
 
   @Prop()
@@ -28,3 +28,6 @@ export class Cliente {
 }
 
 export const ClienteSchema = SchemaFactory.createForClass(Cliente);
+
+ClienteSchema.index({ empresaId: 1, cpfCnpj: 1 }, { unique: true });
+ClienteSchema.index({ empresaId: 1, ativo: 1, nome: 1 });

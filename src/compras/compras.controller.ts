@@ -22,13 +22,7 @@ export class ComprasController {
   @Post('fornecedores')
   @RequireEvento(EVENTOS_NEGOCIO.FORNECEDOR_GERENCIAR)
   createFornecedor(@Body() createFornecedorDto: CreateFornecedorDto, @CurrentUser() user?: CurrentUserPayload) {
-    console.log('Request body /compras/fornecedores:', createFornecedorDto);
-    try {
-      return this.comprasService.createFornecedor(createFornecedorDto, user?.id, user?.empresaId);
-    } catch (err) {
-      console.error('Erro no controller createFornecedor:', err);
-      throw err;
-    }
+    return this.comprasService.createFornecedor(createFornecedorDto, user?.id, user?.empresaId);
   }
 
   @Get('fornecedores')

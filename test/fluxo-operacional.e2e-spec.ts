@@ -290,17 +290,17 @@ describe('Fluxo operacional (e2e)', () => {
         disponivel: 4,
       });
 
-    expect(orcamentosService.update).toHaveBeenCalledWith('orc-1', { status: ORCAMENTO_STATUS.ENVIADO });
-    expect(orcamentosService.update).toHaveBeenCalledWith('orc-1', { status: ORCAMENTO_STATUS.APROVADO });
-    expect(osService.update).toHaveBeenCalledWith('os-1', { statusOperacional: OS_STATUS.EM_DIAGNOSTICO });
-    expect(osService.update).toHaveBeenCalledWith('os-1', { statusOperacional: OS_STATUS.EM_EXECUCAO });
+    expect(orcamentosService.update).toHaveBeenCalledWith('orc-1', { status: ORCAMENTO_STATUS.ENVIADO }, 'empresa-e2e');
+    expect(orcamentosService.update).toHaveBeenCalledWith('orc-1', { status: ORCAMENTO_STATUS.APROVADO }, 'empresa-e2e');
+    expect(osService.update).toHaveBeenCalledWith('os-1', { statusOperacional: OS_STATUS.EM_DIAGNOSTICO }, 'empresa-e2e');
+    expect(osService.update).toHaveBeenCalledWith('os-1', { statusOperacional: OS_STATUS.EM_EXECUCAO }, 'empresa-e2e');
     expect(osService.reservarPeca).toHaveBeenCalledWith({
       ordemServicoId: 'os-1',
       produtoId: 'produto-1',
       quantidade: 1,
-    });
-    expect(osService.consumirReserva).toHaveBeenCalledWith('reserva-1');
-    expect(estoqueService.getDisponibilidadeProduto).toHaveBeenCalledWith('produto-1');
+    }, 'empresa-e2e');
+    expect(osService.consumirReserva).toHaveBeenCalledWith('reserva-1', 'empresa-e2e');
+    expect(estoqueService.getDisponibilidadeProduto).toHaveBeenCalledWith('produto-1', 'empresa-e2e');
   });
 
   it('registra ajuste manual de estoque com usuario autenticado', async () => {
@@ -330,6 +330,7 @@ describe('Fluxo operacional (e2e)', () => {
         origemTipo: 'ajuste_manual',
       },
       'user-e2e',
+      'empresa-e2e',
     );
   });
 
@@ -391,8 +392,8 @@ describe('Fluxo operacional (e2e)', () => {
           valorUnitario: '10.00',
         },
       ],
-    });
-    expect(estoqueService.getDisponibilidadeProduto).toHaveBeenCalledWith('produto-1');
+    }, 'user-e2e', 'empresa-e2e');
+    expect(estoqueService.getDisponibilidadeProduto).toHaveBeenCalledWith('produto-1', 'empresa-e2e');
   });
 
   it('executa contrato HTTP financeiro e garantia apos venda paga', async () => {
@@ -505,6 +506,7 @@ describe('Fluxo operacional (e2e)', () => {
         total: '250.00',
       },
       'user-e2e',
+      'empresa-e2e',
     );
     expect(vendasService.createItem).toHaveBeenCalledWith({
       vendaId: 'venda-1',
@@ -513,7 +515,7 @@ describe('Fluxo operacional (e2e)', () => {
       quantidade: 1,
       valorUnitario: '250.00',
       totalItem: '250.00',
-    });
+    }, 'empresa-e2e');
     expect(pagamentosService.create).toHaveBeenCalledWith(
       {
         vendaId: 'venda-1',
@@ -521,6 +523,7 @@ describe('Fluxo operacional (e2e)', () => {
         formaPagamento: 'pix',
       },
       'user-e2e',
+      'empresa-e2e',
     );
     expect(garantiasService.createGarantia).toHaveBeenCalledWith(
       {
@@ -531,21 +534,25 @@ describe('Fluxo operacional (e2e)', () => {
         motivo: 'Defeito apresentado apos a venda',
       },
       'user-e2e',
+      'empresa-e2e',
     );
     expect(garantiasService.updateGarantia).toHaveBeenCalledWith(
       'garantia-1',
       { status: GARANTIA_STATUS.ENVIADA_FORNECEDOR },
       'user-e2e',
+      'empresa-e2e',
     );
     expect(garantiasService.updateGarantia).toHaveBeenCalledWith(
       'garantia-1',
       { status: GARANTIA_STATUS.APROVADA },
       'user-e2e',
+      'empresa-e2e',
     );
     expect(garantiasService.updateGarantia).toHaveBeenCalledWith(
       'garantia-1',
       { status: GARANTIA_STATUS.CONCLUIDA },
       'user-e2e',
+      'empresa-e2e',
     );
   });
 });

@@ -1,9 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { Model } from 'mongoose';
 import { Produto, ProdutoDocument } from './schemas/produto.schema';
 import { CreateProdutoDto } from './dto/create-produto.dto';
 import { UpdateProdutoDto } from './dto/update-produto.dto';
+import { centavosParaDecimal128, dinheiroParaCentavos } from '../../financeiro/financeiro-adm/financeiro-adm.types';
 
 @Injectable()
 export class ProdutosService {
@@ -11,34 +12,50 @@ export class ProdutosService {
     @InjectModel(Produto.name) private produtoModel: Model<ProdutoDocument>,
   ) {}
 
-  create(createProdutoDto: CreateProdutoDto) {
+  create(createProdutoDto: CreateProdutoDto, empresaId?: string) {
+    this.assertEmpresaPermitida(createProdutoDto.empresaId, empresaId);
     const produtoData = this.montarProdutoData(createProdutoDto);
+    if (empresaId) {
+      produtoData.empresaId = empresaId;
+    }
     const createdProduto = new this.produtoModel(produtoData);
     return createdProduto.save();
   }
 
-  findAll() {
-    return this.produtoModel.find().populate('aparelhoModeloId', 'marca modelo aliases').exec();
+  findAll(empresaId?: string) {
+    return this.produtoModel
+      .find(this.getEmpresaQuery(empresaId, { ativo: { $ne: false } }))
+      .populate('aparelhoModeloId', 'marca modelo aliases')
+      .exec();
   }
 
-  findOne(id: string) {
-    return this.produtoModel.findById(id).populate('aparelhoModeloId', 'marca modelo aliases').exec();
+  findOne(id: string, empresaId?: string) {
+    return this.produtoModel
+      .findOne(this.getEmpresaQuery(empresaId, { _id: id }))
+      .populate('aparelhoModeloId', 'marca modelo aliases')
+      .exec();
   }
 
-  update(id: string, updateProdutoDto: UpdateProdutoDto) {
+  update(id: string, updateProdutoDto: UpdateProdutoDto, empresaId?: string) {
+    this.assertEmpresaPermitida(updateProdutoDto.empresaId, empresaId);
     const updateData = this.montarProdutoData(updateProdutoDto);
-    return this.produtoModel.findByIdAndUpdate(id, updateData, { new: true }).exec();
+    delete updateData.empresaId;
+    return this.produtoModel
+      .findOneAndUpdate(this.getEmpresaQuery(empresaId, { _id: id }), updateData, { new: true })
+      .exec();
   }
 
-  remove(id: string) {
-    return this.produtoModel.findByIdAndDelete(id).exec();
+  remove(id: string, empresaId?: string) {
+    return this.produtoModel
+      .findOneAndUpdate(this.getEmpresaQuery(empresaId, { _id: id }), { ativo: false }, { new: true })
+      .exec();
   }
 
   private montarProdutoData(dto: CreateProdutoDto | UpdateProdutoDto) {
     const produtoData: Record<string, unknown> = { ...dto };
 
     if (this.hasValue(dto.precoVenda)) {
-      produtoData.precoVenda = Types.Decimal128.fromString(String(dto.precoVenda));
+      produtoData.precoVenda = centavosParaDecimal128(this.parseValorNaoNegativoCentavos(dto.precoVenda, 'precoVenda'));
     } else {
       delete produtoData.precoVenda;
     }
@@ -86,5 +103,24 @@ export class ProdutosService {
       .replace(/^(uploads\/)+/i, 'uploads/');
 
     return clean.startsWith('uploads/') ? `/${clean}` : `/uploads/${clean}`;
+  }
+
+  private getEmpresaQuery(empresaId?: string, base: Record<string, unknown> = {}) {
+    return empresaId ? { ...base, empresaId } : base;
+  }
+
+  private assertEmpresaPermitida(dtoEmpresaId?: string, actorEmpresaId?: string) {
+    if (actorEmpresaId && dtoEmpresaId && String(dtoEmpresaId) !== String(actorEmpresaId)) {
+      throw new BadRequestException('Produto nao pode ser vinculado a outra empresa.');
+    }
+  }
+
+  private parseValorNaoNegativoCentavos(value: unknown, campo: string) {
+    const centavos = dinheiroParaCentavos(value);
+    if (!Number.isFinite(centavos) || centavos < 0) {
+      throw new BadRequestException(`${campo} invalido.`);
+    }
+
+    return centavos;
   }
 }

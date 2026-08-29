@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { DatabaseModule } from './database/mongoose.module';
@@ -23,6 +24,10 @@ import { ServicosModule } from './catalogo/servicos/servicos.module';
 import { CompatibilidadeModule } from './catalogo/compatibilidade/compatibilidade.module';
 import { PortalClienteModule } from './portal-cliente/portal-cliente.module';
 import { DocumentosModule } from './documentos/documentos.module';
+import { AuthTokenGuard } from './common/guards/auth-token.guard';
+import { PermissionGuard } from './common/guards/permission.guard';
+import { SimpleRateLimitGuard } from './common/guards/simple-rate-limit.guard';
+import { PrivateUploadsModule } from './common/uploads/private-uploads.module';
 
 @Module({
   imports: [
@@ -48,8 +53,23 @@ import { DocumentosModule } from './documentos/documentos.module';
     CompatibilidadeModule,
     PortalClienteModule,
     DocumentosModule,
+    PrivateUploadsModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    {
+      provide: APP_GUARD,
+      useClass: SimpleRateLimitGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: AuthTokenGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: PermissionGuard,
+    },
+  ],
 })
 export class AppModule {}

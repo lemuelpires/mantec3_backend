@@ -48,12 +48,18 @@ describe('ComprasService', () => {
       registrarEventoNegocio: jest.fn(),
     };
 
+    const financeiroAdmService = {
+      sincronizarTitulosPedidoCompra: jest.fn(),
+      cancelarTitulosPorOrigem: jest.fn(),
+    };
+
     const service = new ComprasService(
       {} as never,
       pedidosCompraModel as never,
       itensPedidoCompraModel as never,
       movimentosEstoqueModel as never,
       auditoriaService as never,
+      financeiroAdmService as never,
     );
 
     return {

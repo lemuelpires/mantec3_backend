@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Cliente, ClienteDocument } from '../clientes/schemas/cliente.schema';
@@ -401,7 +401,11 @@ export class DocumentosService {
   }
 
   private getEmpresaQuery(empresaId?: string, base: Record<string, unknown> = {}) {
-    return empresaId ? { ...base, empresaId } : base;
+    if (!empresaId) {
+      throw new UnauthorizedException('Empresa do usuario nao informada.');
+    }
+
+    return { ...base, empresaId };
   }
 
   private async getOrcamentoAprovadoEm(orcamentoId: unknown, empresaId: unknown) {

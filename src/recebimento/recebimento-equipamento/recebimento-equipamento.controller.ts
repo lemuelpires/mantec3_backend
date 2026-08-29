@@ -3,12 +3,15 @@ import { RecebimentoEquipamentoService } from './recebimento-equipamento.service
 import { CreateRecebimentoEquipamentoDto } from './dto/create-recebimento-equipamento.dto';
 import { UpdateRecebimentoEquipamentoDto } from './dto/update-recebimento-equipamento.dto';
 import { CurrentUser, type CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import { RequireEvento } from '../../common/decorators/require-evento.decorator';
+import { EVENTOS_NEGOCIO } from '../../permissoes/matriz-permissoes';
 
 @Controller('recebimento-equipamento')
 export class RecebimentoEquipamentoController {
   constructor(private readonly recebimentoEquipamentoService: RecebimentoEquipamentoService) {}
 
   @Post()
+  @RequireEvento(EVENTOS_NEGOCIO.RECEBIMENTO_CRIAR)
   create(
     @Body() createRecebimentoEquipamentoDto: CreateRecebimentoEquipamentoDto,
     @CurrentUser() user?: CurrentUserPayload,
@@ -17,16 +20,19 @@ export class RecebimentoEquipamentoController {
   }
 
   @Get()
-  findAll() {
-    return this.recebimentoEquipamentoService.findAll();
+  @RequireEvento(EVENTOS_NEGOCIO.RECEBIMENTO_CONSULTAR)
+  findAll(@CurrentUser() user?: CurrentUserPayload) {
+    return this.recebimentoEquipamentoService.findAll(user?.empresaId);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.recebimentoEquipamentoService.findOne(id);
+  @RequireEvento(EVENTOS_NEGOCIO.RECEBIMENTO_CONSULTAR)
+  findOne(@Param('id') id: string, @CurrentUser() user?: CurrentUserPayload) {
+    return this.recebimentoEquipamentoService.findOne(id, user?.empresaId);
   }
 
   @Patch(':id')
+  @RequireEvento(EVENTOS_NEGOCIO.RECEBIMENTO_EDITAR)
   update(
     @Param('id') id: string,
     @Body() updateRecebimentoEquipamentoDto: UpdateRecebimentoEquipamentoDto,
@@ -36,7 +42,8 @@ export class RecebimentoEquipamentoController {
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.recebimentoEquipamentoService.remove(id);
+  @RequireEvento(EVENTOS_NEGOCIO.RECEBIMENTO_REMOVER)
+  remove(@Param('id') id: string, @CurrentUser() user?: CurrentUserPayload) {
+    return this.recebimentoEquipamentoService.remove(id, user?.empresaId);
   }
 }

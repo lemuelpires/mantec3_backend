@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { createHash } from 'crypto';
 import { Model } from 'mongoose';
@@ -19,6 +19,7 @@ export class TermosRecebimentoService {
   ) {}
 
   async create(createTermosRecebimentoDto: CreateTermosRecebimentoDto, user?: CurrentUserPayload) {
+    await this.assertRecebimentoDaEmpresa(createTermosRecebimentoDto.recebimentoEquipamentoId, user?.empresaId);
     const createdTermosRecebimento = new this.termosRecebimentoModel(
       this.montarDadosTermo(createTermosRecebimentoDto),
     );
@@ -27,15 +28,30 @@ export class TermosRecebimentoService {
     return saved;
   }
 
-  findAll() {
-    return this.termosRecebimentoModel.find().exec();
+  async findAll(empresaId?: string) {
+    const recebimentoIds = await this.getRecebimentoIdsDaEmpresa(empresaId);
+    return this.termosRecebimentoModel.find({ recebimentoEquipamentoId: { $in: recebimentoIds } }).exec();
   }
 
-  findOne(id: string) {
-    return this.termosRecebimentoModel.findById(id).exec();
+  async findOne(id: string, empresaId?: string) {
+    const termo = await this.termosRecebimentoModel.findById(id).exec();
+    if (!termo) {
+      return null;
+    }
+
+    await this.assertRecebimentoDaEmpresa(termo.recebimentoEquipamentoId, empresaId);
+    return termo;
   }
 
   async update(id: string, updateTermosRecebimentoDto: UpdateTermosRecebimentoDto, user?: CurrentUserPayload) {
+    const current = await this.findOne(id, user?.empresaId);
+    if (!current) {
+      throw new NotFoundException('Termo de recebimento nao encontrado.');
+    }
+    if (updateTermosRecebimentoDto.recebimentoEquipamentoId) {
+      await this.assertRecebimentoDaEmpresa(updateTermosRecebimentoDto.recebimentoEquipamentoId, user?.empresaId);
+    }
+
     const updated = await this.termosRecebimentoModel
       .findByIdAndUpdate(id, this.montarDadosTermo(updateTermosRecebimentoDto), { new: true })
       .exec();
@@ -47,8 +63,37 @@ export class TermosRecebimentoService {
     return updated;
   }
 
-  remove(id: string) {
+  async remove(id: string, empresaId?: string) {
+    const current = await this.findOne(id, empresaId);
+    if (!current) {
+      throw new NotFoundException('Termo de recebimento nao encontrado.');
+    }
+
     return this.termosRecebimentoModel.findByIdAndDelete(id).exec();
+  }
+
+  private async getRecebimentoIdsDaEmpresa(empresaId?: string) {
+    this.assertEmpresaInformada(empresaId);
+    const recebimentos = await this.recebimentoEquipamentoModel.find({ empresaId }).select('_id').lean().exec();
+    return recebimentos.map((recebimento) => recebimento._id);
+  }
+
+  private async assertRecebimentoDaEmpresa(recebimentoEquipamentoId: unknown, empresaId?: string) {
+    this.assertEmpresaInformada(empresaId);
+    const recebimento = await this.recebimentoEquipamentoModel
+      .findOne({ _id: String(recebimentoEquipamentoId), empresaId })
+      .select('_id')
+      .lean()
+      .exec();
+    if (!recebimento) {
+      throw new NotFoundException('Recebimento nao encontrado.');
+    }
+  }
+
+  private assertEmpresaInformada(empresaId?: string): asserts empresaId is string {
+    if (!empresaId) {
+      throw new UnauthorizedException('Empresa do usuario nao informada.');
+    }
   }
 
   private montarDadosTermo(dto: CreateTermosRecebimentoDto | UpdateTermosRecebimentoDto) {
